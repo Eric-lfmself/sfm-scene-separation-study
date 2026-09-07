@@ -82,7 +82,7 @@ is nothing to separate. Correct output is **one** cluster.
 The filter deleted 431 of 780 verified geometries, and the `relief_2` reconstruction
 collapsed: after Sim(3) alignment, **all 20 of its cameras are more than 178° from their
 true orientation.** The camera *positions* still fit (0.95 m median), so the model looks
-plausible until you check where the cameras are pointing. The baseline was not perfect
+plausible until I checked where the cameras were pointing. The baseline was not perfect
 either — 5 of 20 cameras flipped — but 15 were within 5°. Starving the mapper of
 constraints turned a mostly-correct reconstruction into a uniformly inverted one.
 
@@ -133,7 +133,7 @@ alike, and geometric verification handles the rest on its own.
 not one: that split samples roughly every 97th frame of a ~1900-image flight, so
 consecutive images barely overlap. The fragmentation is missing overlap. A benchmark
 split built for one task (novel-view synthesis) can be actively wrong for another, and
-the symptom is indistinguishable from the failure you are hunting. Streaming
+the symptom is indistinguishable from the failure I was looking for. Streaming
 *consecutive* frames out of the 11 GB archives fixed it.
 
 No ground-truth poses were obtainable for the aerial frames (the pose metadata sits at

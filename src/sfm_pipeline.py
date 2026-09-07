@@ -177,7 +177,7 @@ def match_with_lightglue(img_fnames,
 
 def import_into_colmap(img_dir, feature_dir='.featureout', database_path='colmap.db'):
     """Replaces the classic `h5_to_db.py` SQLite writer. pycolmap >= 4 requires every
-    image to belong to a frame, and every frame to a rig, so we create one trivial
+    image to belong to a frame, and every frame to a rig, so this writes one trivial
     rig+frame per image (equivalent to COLMAP's own feature importer)."""
     if os.path.exists(database_path):
         os.remove(database_path)

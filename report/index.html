@@ -259,7 +259,7 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:13px;color:va
     <div class="eyebrow">Diagnosis</div>
     <h2>The false links are numerous but weak</h2>
   </div>
-  <p class="measure">Counting pairs makes the contamination look severe. Measuring their <em>strength</em> makes it look trivial — the two populations barely overlap once you look at how many inliers survive RANSAC.</p>
+  <p class="measure">Counting pairs makes the contamination look severe. Measuring their <em>strength</em> makes it look trivial — the two populations barely overlap once the count of inliers surviving RANSAC is taken into account.</p>
 
   <figure>
     <div class="chartcard">
@@ -343,7 +343,7 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:13px;color:va
     </table>
   </div>
 
-  <p class="measure">The filtered <code>relief_2</code> reconstruction did not merely get less accurate — it <strong>collapsed</strong>. After Sim(3) alignment every one of its 20 cameras points more than 178° from its true orientation, while the camera <em>positions</em> still fit to within a metre. The model looks plausible until you check where the cameras are pointing. The alignment is a proper rotation, so this is the reconstruction and not the comparison.</p>
+  <p class="measure">The filtered <code>relief_2</code> reconstruction did not merely get less accurate — it <strong>collapsed</strong>. After Sim(3) alignment every one of its 20 cameras points more than 178° from its true orientation, while the camera <em>positions</em> still fit to within a metre. The model looks plausible until I checked where the cameras were pointing. The alignment is a proper rotation, so this is the reconstruction and not the comparison.</p>
   <p class="measure">The filter deleted 431 of 780 verified geometries to get there. It had to: <strong>true cross-session links are weak</strong>, and their inlier counts sit in the same range as the false cross-scene links the filter was designed to remove.</p>
 
   <figure>
@@ -406,7 +406,7 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:13px;color:va
 
   <div class="callout warn">
     <h3>The first aerial attempt measured nothing, and it looked like a result</h3>
-    <p>The obvious slice to take is the benchmark's own <em>validation</em> split. It produced 3 reconstructions from 20 images, the largest holding 5 — which reads like a clustering failure and is not one. That split samples roughly every 97th frame of a ~1900-image flight, so consecutive images barely overlap: only <strong>35%</strong> of pairs matched at all. A benchmark split built for one task (novel-view synthesis) can be actively wrong for another, and the symptom is indistinguishable from the failure you are hunting. Streaming consecutive frames out of the 11 GB archives fixed it.</p>
+    <p>The obvious slice to take is the benchmark's own <em>validation</em> split. It produced 3 reconstructions from 20 images, the largest holding 5 — which reads like a clustering failure and is not one. That split samples roughly every 97th frame of a ~1900-image flight, so consecutive images barely overlap: only <strong>35%</strong> of pairs matched at all. A benchmark split built for one task (novel-view synthesis) can be actively wrong for another, and the symptom is indistinguishable from the failure I was looking for. Streaming consecutive frames out of the 11 GB archives fixed it.</p>
   </div>
 
   <p class="measure">No ground-truth poses were obtainable for the aerial frames — the pose metadata sits at the tail of an 11 GB archive the host stopped serving mid-study — so these rows report registration and clustering only, both of which are metric-independent.</p>

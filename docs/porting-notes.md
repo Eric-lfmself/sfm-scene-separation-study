@@ -127,7 +127,7 @@ stage is pure cost.
 
 **`max_num_models=25` is expensive on mixed-scene input.** On a 251-image two-site set the
 incremental mapper spent over an hour exploring sub-models when the correct answer was 2.
-For reproduction runs, set it near the number of scenes you actually expect.
+I set it near the number of scenes actually expected in the input.
 
 **Colab keeps executing after the browser detaches.** A long `pycolmap.incremental_mapping`
 call blocks the kernel's comm loop, so the frontend shows "Connecting" / "Resuming
