@@ -278,20 +278,84 @@ def trans_err_deg(t1, t2):
     return float(np.degrees(np.arccos(np.clip(abs(cos), -1.0, 1.0))))
 
 
-def maa_relative_pose(pred_poses, gt_poses, thresholds=(1, 2, 5, 10)):
-    """mAA over relative poses, invariant to the reconstruction's arbitrary gauge.
-    pred_poses / gt_poses: {name: (R, t)}.  Pairs missing from pred count as failures."""
-    names = sorted(gt_poses.keys())
+def pose_auc(errors, thresholds=(5, 10, 20)):
+    """AUC of the pose-error cumulative curve, the convention used across the local
+    feature matching literature (SuperGlue, LoFTR, LightGlue).
+
+    `errors` are per-pair angular errors in degrees, where the error of a pair is
+    max(rotation angular error, translation angular error) -- the same definition
+    LightGlue reports AUC@5/10/20 against.
+    """
+    if len(errors) == 0:
+        return [float('nan')] * len(thresholds)
+    errors = np.sort(np.asarray(errors, dtype=float))
+    recall = (np.arange(len(errors)) + 1) / len(errors)
+    errors = np.r_[0.0, errors]
+    recall = np.r_[0.0, recall]
+    out = []
+    for t in thresholds:
+        last = np.searchsorted(errors, t)
+        r = np.r_[recall[:last], recall[last - 1] if last > 0 else 0.0]
+        e = np.r_[errors[:last], t]
+        out.append(float(np.trapz(r, x=e) / t))
+    return out
+
+
+def relative_pose_errors(pred_poses, gt_poses, names=None, clusters=None):
+    """Per-pair angular error, max(rotation, translation direction), in degrees.
+
+    A pair whose images are unregistered -- or which lands in two different
+    reconstructions, where the relative pose is meaningless -- scores 180.
+    """
+    names = sorted(names if names is not None else gt_poses.keys())
     errs = []
     for a in range(len(names)):
         for b in range(a + 1, len(names)):
             na, nb = names[a], names[b]
             Rg, tg = relative_pose(*gt_poses[na], *gt_poses[nb])
-            if na not in pred_poses or nb not in pred_poses:
+            split = clusters is not None and clusters.get(na) != clusters.get(nb)
+            if na not in pred_poses or nb not in pred_poses or split:
                 errs.append(180.0)
                 continue
             Rp, tp = relative_pose(*pred_poses[na], *pred_poses[nb])
             errs.append(max(rot_err_deg(Rp, Rg), trans_err_deg(tp, tg)))
-    errs = np.array(errs)
-    per_thr = {t: float((errs < t).mean()) for t in thresholds}
-    return float(np.mean(list(per_thr.values()))), per_thr, errs
+    return np.array(errs)
+
+
+def camera_center(pose):
+    R, t = pose
+    return -R.T @ t
+
+
+def umeyama(src, dst):
+    """Least-squares similarity transform (scale, rotation, translation) taking
+    `src` onto `dst`. An SfM reconstruction is only defined up to a Sim(3), so this
+    is the alignment step before any absolute pose comparison."""
+    mu_s, mu_d = src.mean(0), dst.mean(0)
+    S, D = src - mu_s, dst - mu_d
+    U, Sig, Vt = np.linalg.svd(D.T @ S / len(src))
+    F = np.eye(3)
+    if np.linalg.det(U) * np.linalg.det(Vt) < 0:
+        F[2, 2] = -1                      # keep it a rotation, never a reflection
+    R = U @ F @ Vt
+    var = (S ** 2).sum() / len(src)
+    s = float((Sig * np.diag(F)).sum() / var) if var > 1e-12 else 1.0
+    return s, R, mu_d - s * R @ mu_s
+
+
+def absolute_pose_errors(pred_poses, gt_poses, names):
+    """Camera-centre error (in the ground truth's units) and absolute rotation error,
+    after aligning the reconstruction to ground truth with a Sim(3). This is the
+    Structure-from-Motion convention, and on metric ground truth it reports metres.
+
+    Returns (position_errors, rotation_errors_deg, scale).
+    """
+    names = [n for n in names if n in pred_poses and n in gt_poses]
+    if len(names) < 3:
+        return np.array([]), np.array([]), float('nan')
+    P = np.array([camera_center(pred_poses[n]) for n in names])
+    G = np.array([camera_center(gt_poses[n]) for n in names])
+    s, Ra, ta = umeyama(P, G)
+    pos = np.linalg.norm((s * (Ra @ P.T).T + ta) - G, axis=1)
+    rot = np.array([rot_err_deg(pred_poses[n][0] @ Ra.T, gt_poses[n][0]) for n in names])
+    return pos, rot, s

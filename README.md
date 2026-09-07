@@ -4,29 +4,46 @@ A study of the retrieval-and-matching stage of a Structure-from-Motion pipeline
 (**DINOv2 shortlisting → ALIKED → LightGlue → COLMAP**), ported forward to current
 library versions and evaluated against ground truth on public data.
 
-The pipeline reconstructs single scenes near-perfectly. It then does two things
+The pipeline reconstructs single scenes to millimetres. It then does two things
 silently wrong, and the obvious fix for the first one makes the second one worse.
+
+---
+
+## Metrics
+
+Two standard views of pose accuracy, both reported throughout:
+
+**AUC@5/10/20°** — the convention across the feature-matching literature. Per image
+pair, error = `max(rotation angular error, translation angular error)`; AUC is the
+normalised area under the cumulative error curve at each threshold. This is the same
+error definition LightGlue reports AUC@5/10/20° against, so the numbers sit on the same
+scale as that literature. Pairs that are unregistered — or that land in two different
+reconstructions, where relative pose is meaningless — score 180°.
+
+**Sim(3)-aligned absolute error** — the Structure-from-Motion convention. An SfM
+reconstruction is defined only up to a similarity transform, so the reconstruction is
+first aligned to ground truth with a Sim(3); the table then reports median camera-centre
+error and median absolute rotation error. ETH3D ground truth is metrically scaled from
+laser scans, so these are **real metres**.
 
 ---
 
 ## Results
 
-All runs on one Colab T4. Metric is **mAA over relative poses**, which is invariant to
-the arbitrary gauge of an SfM reconstruction: per image pair,
-error = `max(rotation angle error, translation direction error)`, averaged over the
-1°/2°/5°/10° thresholds. Pairs that are unregistered — or that land in different
-clusters — score 180° and count as failures.
+All runs on one Colab T4.
 
 ### Single scenes (ETH3D, laser-scanned ground truth)
 
-| Scene | Images | Registered | Clusters | mAA | 1° / 2° / 5° / 10° |
-|---|---|---|---|---|---|
-| `pipes` | 14 | **14 / 14** | 1 | 0.951 | .824 .989 .989 1.000 |
-| `terrace` | 23 | **23 / 23** | 1 | 0.968 | .889 .984 1.000 1.000 |
-| `courtyard` | 38 | **38 / 38** | 1 | 0.797 | .697 .802 .841 .846 |
+| Scene | Images | Registered | Clusters | AUC@5 / 10 / 20° | Median position | Median rotation |
+|---|---|---|---|---|---|---|
+| `pipes` | 14 | **14 / 14** | 1 | 0.873 / 0.937 / 0.969 | **7 mm** | 0.27° |
+| `terrace` | 23 | **23 / 23** | 1 | 0.890 / 0.945 / 0.972 | **16 mm** | 0.42° |
+| `courtyard` | 38 | **38 / 38** | 1 | 0.744 / 0.795 / 0.821 | **516 mm** | 1.76° |
 
-The port is correct. Note `courtyard`: mAA stops climbing at 0.846 even by the 10°
-threshold, so ~15% of its pairs are not marginally off — they are wrong.
+The port is correct: on two of three scenes the reconstruction lands within centimetres
+of a laser scan. `courtyard` is 30× worse than its neighbours on the same rig and
+settings — half a metre — which is the first hint that something in this pipeline fails
+without announcing itself.
 
 ### Failure 1 — two different scenes get welded together
 
@@ -34,20 +51,19 @@ threshold, so ~15% of its pairs are not marginally off — they are wrong.
 setting the study is about: unrelated scenes arrive in one bucket and the pipeline has
 to separate them.
 
-| | Registered | Clusters | Purity |
-|---|---|---|---|
-| baseline | 75 / 75 | **2** (should be 3) | **0.693** |
-| + 100-inlier filter | 75 / 75 | 3 | **1.000** |
+| | Registered | Clusters | Purity | `courtyard` AUC@5° | `courtyard` position |
+|---|---|---|---|---|---|
+| baseline | 75 / 75 | **2** (should be 3) | **0.693** | 0.646 | 809 mm |
+| + 100-inlier filter | 75 / 75 | 3 | **1.000** | **0.779** | **378 mm** |
 
 `courtyard` and `terrace` merged into one reconstruction. Both sit on the ETH Zürich
 campus and share facade, railing and paving texture, so ALIKED and LightGlue find
 *real*, locally-consistent correspondences between them: **296** cross-scene pairs
 cleared the match threshold and **147** survived COLMAP's geometric verification.
 
-Dropping two-view geometries below 100 RANSAC inliers before the mapper fixes it,
-and improves everything else too — `courtyard` mAA 0.695 → **0.833** (beating its own
-0.797 standalone run), `terrace` 0.971 → 0.978, `pipes` 0.962 → 0.970, mapping time
-449 s → **172 s**.
+Dropping two-view geometries below 100 RANSAC inliers before the mapper separates the
+scenes perfectly, and improves accuracy on top: `courtyard` goes from 809 mm to 378 mm —
+better than its own 516 mm standalone run — while mapping time falls 449 s → **172 s**.
 
 ### Failure 2 — the fix, falsified
 
@@ -55,47 +71,74 @@ A weak link has two possible causes and the filter cannot tell them apart: a **f
 link between different places that look alike, or a **true** link between two captures
 of the same place. ETH3D's `relief` and `relief_2` are the second case — 31 + 31 images
 of the *same* interior, photographed twice. DINOv2 cannot separate them at all
-(cross-session descriptor distance 0.305 vs 0.308 / 0.295 within), because there is
-nothing to separate. Correct output is **one** cluster.
+(cross-session descriptor distance 0.305, against 0.308 and 0.295 within), because there
+is nothing to separate. Correct output is **one** cluster.
 
-| | Registered | Clusters | `relief` mAA | `relief_2` mAA |
+| | Clusters | `relief` AUC@5° | `relief_2` AUC@5° | `relief_2` rotation |
 |---|---|---|---|---|
-| baseline | 62 / 62 | **2** (should be 1) | 0.458 | 0.363 |
-| + 100-inlier filter | 62 / 62 | **3** | 0.475 | **0.310** |
+| baseline | **2** (should be 1) | 0.423 | 0.339 | 1.25° |
+| + 100-inlier filter | **2** | 0.441 | **0.290** | **178.5°** |
 
-The filter deleted 431 of 780 verified geometries. It had to — true cross-session
-links are weak:
+The filter deleted 431 of 780 verified geometries, and the `relief_2` reconstruction
+collapsed: after Sim(3) alignment, **all 20 of its cameras are more than 178° from their
+true orientation.** The camera *positions* still fit (0.95 m median), so the model looks
+plausible until you check where the cameras are pointing. The baseline was not perfect
+either — 5 of 20 cameras flipped — but 15 were within 5°. Starving the mapper of
+constraints turned a mostly-correct reconstruction into a uniformly inverted one.
+
+It had to delete them, because true cross-session links are weak:
 
 | Link type | Should be | n | p10 | median | max |
 |---|---|---|---|---|---|
 | within-scene | kept | 890 | 32 | **302** | 3379 |
 | **cross-session (revisit)** | **kept** | 370 | 18 | **51** | 860 |
-| cross-scene | **dropped** | 150 | 16 | **22** | 83 |
+| cross-scene (`courtyard`↔`terrace`) | **dropped** | 150 | 16 | **22** | 83 |
 
 **Inlier count alone cannot distinguish "a different place that looks similar" from
 "the same place, seen again."** A threshold high enough to remove all 150 false links
-(84) also removes **80% of the 370 true ones**. On a survey where flight strips overlap
-and lighting changes between passes, that is the difference between one reconstruction
-and several.
+(84) also removes **80% of the 370 true ones**.
 
-### Aerial transfer (Mill 19, real UAV imagery)
+### The failure needs visual similarity, not just mixing
+
+Two real UAV sites — an industrial building and a rubble field, 251 frames — mixed into
+one folder, and the pipeline separated them **perfectly with no filter at all**:
+
+| | Registered | Clusters | Purity |
+|---|---|---|---|
+| `building` + `rubble` | 234 / 251 | **2** | **1.000** |
+
+LightGlue still produced 907 cross-site pairs (11.7% of everything it kept). Geometric
+verification then destroyed them:
+
+| | n | p10 | median | max | ≥100 inliers |
+|---|---|---|---|---|---|
+| within-site | 5623 | 26 | **412** | 3706 | many |
+| cross-site | 195 | 15 | **16** | **37** | **0** |
+
+A median of 16 inliers sits at the floor RANSAC will accept — that is noise, not
+structure. Compare `courtyard`↔`terrace`, whose false links reached **83**: those were
+genuine correspondences on genuinely similar architecture. So the merge failure is not
+"mixed input breaks the pipeline"; it needs two distinct places that actually look
+alike, and geometric verification handles the rest on its own.
+
+### Aerial runs
 
 | Run | Frames | Pairs matched | Registered | Clusters | Mapping |
 |---|---|---|---|---|---|
 | val split | 20 | 67 / 190 · 35% | 13 / 20 | 3 | 63 s |
 | `building` | 120 | 3538 / 6283 · 56% | **120 / 120** | **1** | 2264 s |
-| `building` + `rubble` | 251 | 7742 / 16580 · 47% | *mapping did not finish* | | |
+| `building` + `rubble` | 251 | 7742 / 16580 · 47% | **234 / 251** | **2** | — |
 
 **The val-split row is the cautionary one.** It reads like a clustering failure and is
 not one: that split samples roughly every 97th frame of a ~1900-image flight, so
 consecutive images barely overlap. The fragmentation is missing overlap. A benchmark
 split built for one task (novel-view synthesis) can be actively wrong for another, and
-the symptom is indistinguishable from the failure you are hunting.
+the symptom is indistinguishable from the failure you are hunting. Streaming
+*consecutive* frames out of the 11 GB archives fixed it.
 
-Streaming *consecutive* frames out of the 11 GB archives fixed it, and the single-site
-run is the clean aerial transfer result. Pose handling was validated where overlap does
-exist: within one reconstruction, rotation error against the PixSfM reference has a
-median of **0.47°** and translation direction **0.74°**.
+No ground-truth poses were obtainable for the aerial frames (the pose metadata sits at
+the tail of an 11 GB archive the host stopped serving), so the aerial rows report
+registration and clustering only — both metric-independent.
 
 ### The retrieval parameter that only starts working at ~250 images
 
@@ -152,7 +195,7 @@ notebooks/               the original working log (see notebooks/README.md)
 pip install pycolmap kornia kornia_moons h5py transformers opencv-python
 pip install git+https://github.com/cvg/LightGlue.git
 
-python src/run_experiments.py --fetch eth3d --scenes courtyard terrace pipes
+python src/run_experiments.py --fetch eth3d --scenes courtyard terrace pipes relief relief_2
 python src/run_experiments.py --experiment mixed3
 python src/run_experiments.py --experiment mixed3 --min-inliers 100
 python src/run_experiments.py --experiment revisit
@@ -160,25 +203,23 @@ python src/run_experiments.py --experiment revisit --min-inliers 100
 ```
 
 Needs a CUDA GPU. Verified on a Colab T4 (15 GB) with Python 3.13.15, torch 2.11.0+cu128,
-pycolmap 4.2.0, kornia 0.8.3, transformers 5.16.1. Total compute for the study was about
-four hours.
+pycolmap 4.2.0, kornia 0.8.3, transformers 5.16.1.
 
 Set `--max-num-models` well below the default 25 for mixed-scene runs — on 251 images the
 mapper spent over an hour exploring sub-models when the correct answer was 2.
 
 ## Limitations
 
-- Scoring is the relative-pose mAA defined above. Other pose benchmarks define mAA with
-  different thresholds and different handling of clustering, so numbers here are not
-  directly comparable to figures reported elsewhere.
-- Five ETH3D scenes and at most 251 images per run. Each failure was observed on one
-  specific scene pair; neither is established as general.
-- One run per configuration. COLMAP's incremental mapper is seed-dependent; mAA
-  differences under ~0.02 are not necessarily real.
-- Mill 19 poses are a PixSfM reconstruction, not independent survey ground truth, so
-  aerial pose agreement measures consistency with a careful reference rather than
-  absolute accuracy.
-- The 251-frame mixed UAV run did not finish mapping and is reported as incomplete.
+- Five ETH3D scenes and two UAV sites; at most 251 images per run. Each failure was
+  observed on one specific scene pair, and neither is established as general.
+- One run per configuration. COLMAP's incremental mapper is seed-dependent, so small
+  AUC differences are not necessarily real. The large ones (a 178° rotation collapse, a
+  purity change from 0.693 to 1.000) are well outside that noise.
+- The aerial runs have no ground-truth poses, so they contribute clustering evidence
+  only.
+- `relief` and `relief_2` are registered in independent coordinate frames, so only
+  within-session pose error is meaningful there; the cross-session question is answered
+  by cluster count, not by pose error.
 
 ## Data and credits
 

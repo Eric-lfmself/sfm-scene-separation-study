@@ -9,20 +9,29 @@ ALIKED 4600 keypoints / 1024 px / threshold 0.08 · DINOv2-base MAC descriptors 
 `kornia.feature.LightGlueMatcher('aliked')` with `min_matches=20` · mapper with
 `min_model_size=3`, `max_num_models=25`.
 
-**Metric.** mAA over relative poses. For each ground-truth image pair,
-`err = max(rotation angle error, translation direction angle error)`; mAA is the mean of
-the fractions under 1°, 2°, 5° and 10°. Unregistered pairs, and pairs split across
-different clusters, score 180°.
+## Metrics
+
+**AUC@5/10/20°.** Per image pair, error = `max(rotation angular error, translation
+angular error)`; AUC is the normalised area under the cumulative error curve at each
+threshold — the convention used across the feature-matching literature, and the same
+error definition LightGlue reports against. Unregistered pairs, and pairs split across
+two reconstructions, score 180°.
+
+**Sim(3)-aligned absolute error.** An SfM reconstruction is defined only up to a
+similarity transform, so camera centres are aligned to ground truth with a Sim(3)
+(Umeyama) before comparison. Reported as median camera-centre error and median absolute
+rotation error, computed inside the scene's dominant reconstruction. ETH3D ground truth
+is metrically scaled from laser scans, so positions are in real metres.
 
 ---
 
 ## 1. ETH3D single scenes
 
-| Scene | Images | Registered | Clusters | Shortlisted | Kept | mAA | 1° / 2° / 5° / 10° |
-|---|---|---|---|---|---|---|---|
-| pipes | 14 | 14 / 14 | 1 | 91 | 71 | 0.9505 | .824 .989 .989 1.000 |
-| terrace | 23 | 23 / 23 | 1 | 253 | 210 | 0.9684 | .889 .984 1.000 1.000 |
-| courtyard | 38 | 38 / 38 | 1 | 703 | 670 | 0.7966 | .697 .802 .841 .846 |
+| Scene | Images | Registered | Clusters | AUC@5 / 10 / 20° | Median position | Median rotation |
+|---|---|---|---|---|---|---|
+| pipes | 14 | 14 / 14 | 1 | 0.873 / 0.937 / 0.969 | 0.007 m | 0.268° |
+| terrace | 23 | 23 / 23 | 1 | 0.890 / 0.945 / 0.972 | 0.016 m | 0.422° |
+| courtyard | 38 | 38 / 38 | 1 | 0.744 / 0.795 / 0.821 | 0.516 m | 1.758° |
 
 Timings (seconds):
 
@@ -43,14 +52,22 @@ Shortlist 2508 pairs (of 2775 possible) in 92.5 s · detect 56.9 s · match 221.
 
 ### Baseline
 
-Registered 75 / 75 in **2 clusters** (correct: 3).
+Registered 75 / 75 in **2 clusters** (correct: 3). Purity **0.6933**.
 
 | Cluster | Composition | Size |
 |---|---|---|
 | 0 | courtyard 38 + terrace 23 | 61 |
 | 1 | pipes 14 | 14 |
 
-Purity **0.6933**. Per-scene mAA: courtyard 0.6945, pipes 0.9615, terrace 0.9713.
+| Scene | AUC@5 / 10 / 20° | Median position | Median rotation |
+|---|---|---|---|
+| courtyard | 0.646 / 0.700 / 0.728 | 0.809 m | 4.383° |
+| pipes | 0.894 / 0.947 / 0.974 | 0.005 m | 0.252° |
+| terrace | 0.897 / 0.948 / 0.974 | 0.012 m | 0.406° |
+
+Note that `terrace` and `pipes` are barely affected — the merge damages the larger,
+weaker scene while leaving its partner's numbers intact. Registration counts alone would
+show nothing at all.
 
 ### Where the merge comes from
 
@@ -102,13 +119,13 @@ Threshold sweep:
 
 Registered 75 / 75 in **3 clusters**, one per scene. Purity **1.0000**.
 
-| Scene | baseline mAA | filtered mAA |
-|---|---|---|
-| courtyard | 0.6945 | **0.8332** |
-| terrace | 0.9713 | 0.9783 |
-| pipes | 0.9615 | 0.9698 |
+| Scene | AUC@5° | AUC@10° | AUC@20° | Median position | Median rotation |
+|---|---|---|---|---|---|
+| courtyard | 0.646 → **0.779** | 0.700 → 0.837 | 0.728 → 0.867 | 0.809 → **0.378 m** | 4.383 → **1.775°** |
+| terrace | 0.897 → 0.893 | 0.948 → 0.947 | 0.974 → 0.973 | 0.012 → 0.015 m | 0.406 → 0.435° |
+| pipes | 0.894 → 0.897 | 0.947 → 0.948 | 0.974 → 0.974 | 0.005 → 0.004 m | 0.252 → 0.319° |
 
-Note the filtered `courtyard` (0.833) beats its own standalone run (0.797).
+The filtered `courtyard` (0.378 m) beats its own standalone run (0.516 m).
 
 ---
 
@@ -124,17 +141,21 @@ ransac 25.6 s · mapping 131.9 s.
 
 ### Baseline
 
-Registered 62 / 62 in **2 clusters** (correct: 1).
+Registered 62 / 62 in **2 clusters** (correct: 1). Purity **0.5323**.
 
 | Cluster | Composition | Size |
 |---|---|---|
 | 0 | relief 13 + relief_2 11 | 24 |
 | 1 | relief 18 + relief_2 20 | 38 |
 
-**The split is not by session.** Both clusters contain both sessions; cross-session linking
-worked (427 pairs kept, 370 verified). The reconstruction fragmented spatially instead.
+**The split is not by session.** Both clusters contain both sessions; cross-session
+linking worked (427 pairs kept, 370 verified). The reconstruction fragmented spatially
+instead.
 
-Within-session mAA: relief 0.4581, relief_2 0.3629.
+| Scene | AUC@5 / 10 / 20° | Median position | Median rotation | In dominant cluster |
+|---|---|---|---|---|
+| relief | 0.423 / 0.460 / 0.478 | 0.016 m | 0.561° | 58% |
+| relief_2 | 0.339 / 0.352 / 0.359 | 0.354 m | 1.248° | 65% |
 
 ### The link populations
 
@@ -155,17 +176,26 @@ Survival under a threshold:
 
 ### Ablation: the same 100-inlier filter
 
-431 of 780 geometries dropped. Mapping 131.8 s.
+431 of 780 geometries dropped. Mapping 131.8 s. Still 2 clusters, purity 0.5323.
 
-Registered 62 / 62 in **3 clusters** — worse than the baseline's 2, against a correct
-answer of 1.
-
-| Scene | baseline mAA | filtered mAA | |
+| Scene | AUC@5° | Median position | Median rotation |
 |---|---|---|---|
-| relief | 0.4581 | 0.4747 | better |
-| relief_2 | 0.3629 | **0.3097** | **worse** |
+| relief | 0.423 → 0.441 | 0.016 → 0.010 m | 0.561 → 0.499° |
+| relief_2 | 0.339 → **0.290** | 0.354 → 0.949 m | 1.248 → **178.537°** |
 
-### The overlap
+**The `relief_2` reconstruction collapsed.** After Sim(3) alignment:
+
+| | min | p25 | median | p75 | max | cameras > 170° |
+|---|---|---|---|---|---|---|
+| baseline | 0.84° | 1.09° | 1.25° | 45.52° | 178.30° | **5 / 20** |
+| + filter | 178.42° | 178.52° | **178.54°** | 179.85° | 179.86° | **20 / 20** |
+
+Every camera in the filtered model points roughly backwards. The alignment is a proper
+rotation (`det = +1.000`), so this is the reconstruction, not the comparison. Camera
+positions still fit to within a metre, which is why the model looks plausible until
+orientation is checked.
+
+### The overlap that makes a global threshold impossible
 
 | Link type | Should be | n | p10 | median | max |
 |---|---|---|---|---|---|
@@ -173,15 +203,16 @@ answer of 1.
 | cross-session (revisit) | **kept** | 370 | 18 | **51** | 860 |
 | cross-scene | **dropped** | 150 | 16 | **22** | 83 |
 
-A threshold that removes all 150 false cross-scene links (84) removes 80% of the 370 true
+A threshold removing all 150 false cross-scene links (84) removes 80% of the 370 true
 cross-session links.
 
 ---
 
 ## 4. Mill 19 — real UAV imagery
 
-4608 × 3456 frames from two Pittsburgh industrial sites. Poses are a PixSfM reconstruction,
-not independent survey ground truth.
+4608 × 3456 frames from two Pittsburgh industrial sites. No ground-truth poses were
+obtainable (the pose metadata sits at the tail of an 11 GB archive the host stopped
+serving mid-study), so these runs report registration and clustering only.
 
 ### 4a. Validation split — unusable, and it looks like a result
 
@@ -190,10 +221,9 @@ not independent survey ground truth.
 Shortlist 190 (exhaustive) · detect 11.4 s · match 24.4 s · **67 pairs kept (35%)** ·
 ransac 1.4 s · mapping 62.8 s · registered **13 / 20** in **3 clusters** (5 / 3 / 5).
 
-mAA 0.0842 — but that is fragmentation, not pose error. Within the largest reconstruction,
-rotation error median **0.47°** and translation direction **0.74°** against the PixSfM
-reference, which validates the coordinate conversion
-(`R_cw = diag(1,-1,-1) @ R_wc.T`, `t_cw = -R_cw @ t_wc`).
+The fragmentation is missing overlap, not scene confusion. An earlier check on this split
+did confirm the pose-handling code: within its largest reconstruction, rotation error
+against the PixSfM reference had a median of 0.47° and translation direction 0.74°.
 
 ### 4b. Single site, consecutive frames
 
@@ -202,16 +232,39 @@ reference, which validates the coordinate conversion
 Shortlist 6283 (of 7140) in 68.8 s · detect 51.1 s · match 768.3 s · **3538 pairs kept
 (56%)** · ransac 159.5 s · mapping 2263.5 s · registered **120 / 120** in **1 cluster**.
 
-### 4c. Mixed sites — incomplete
+### 4c. Mixed sites — clean separation, no filter
 
 251 frames (`building` 120 + `rubble` 131).
 
 Shortlist **16580 of 31375 (53%)** in 143.6 s · detect 108.8 s · match 2031.5 s ·
 **7742 pairs kept** · ransac 265.7 s.
 
-The incremental mapper did not return; the Colab session was lost during it. With
-`max_num_models=25` on a 251-image two-site set, the mapper explores far more sub-models
-than the correct answer (2) requires. Reported as incomplete.
+Registered **234 / 251** in **2 clusters**, purity **1.0000**:
+
+| Cluster | Composition |
+|---|---|
+| 0 | rubble 131 / 131 |
+| 1 | building 103 / 120 |
+
+LightGlue pairs kept, by site pair:
+
+| | Pair | Count | Share |
+|---|---|---|---|
+| WITHIN | building \| building | 3530 | 45.6% |
+| WITHIN | rubble \| rubble | 3305 | 42.7% |
+| CROSS | building \| rubble | 907 | 11.7% |
+
+After geometric verification:
+
+| | n | min | p10 | median | p90 | max | ≥100 inliers |
+|---|---|---|---|---|---|---|---|
+| within-site | 5623 | 15 | 26 | 412 | 2025 | 3706 | many |
+| **cross-site** | **195** | 15 | 15 | **16** | 19 | **37** | **0** |
+
+Cross-site links are 3.4% of verified geometries and sit at the floor RANSAC accepts.
+Compare `courtyard`↔`terrace`, whose false links reached 83 inliers and merged two
+scenes. The merge failure requires two distinct places that genuinely look alike; when
+they do not, geometric verification removes the cross-links unaided.
 
 ---
 

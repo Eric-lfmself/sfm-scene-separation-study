@@ -2,8 +2,8 @@
 Experiment driver for the SfM matching pipeline study.
 
 Fetches ETH3D scenes, assembles single-scene / mixed-scene / revisit datasets,
-runs the pipeline, and reports registration, cluster purity, relative-pose mAA
-and the cross-scene link diagnostics.
+runs the pipeline, and reports registration, cluster purity, pose AUC, Sim(3)-aligned
+absolute pose error, and the cross-scene link diagnostics.
 
     python run_experiments.py --fetch eth3d --scenes courtyard terrace pipes
     python run_experiments.py --experiment mixed3
@@ -28,15 +28,14 @@ import torch
 import pycolmap
 
 from sfm_pipeline import (
+    absolute_pose_errors,
     detect_aliked,
     get_image_pairs_shortlist,
     import_into_colmap,
-    maa_relative_pose,
     match_with_lightglue,
+    pose_auc,
     read_colmap_images_txt,
-    relative_pose,
-    rot_err_deg,
-    trans_err_deg,
+    relative_pose_errors,
 )
 
 KMAX = 2147483647  # COLMAP's kMaxNumImages, used to decode pair ids
@@ -208,23 +207,32 @@ def show_clusters(clusters, labels, expect=None):
     return purity
 
 
-def maa_within_scene(preds, gt, labels, clusters, scene, thresholds=(1, 2, 5, 10)):
-    """mAA over pairs inside one scene. Pairs that are unregistered, or split across
-    different clusters, have no meaningful predicted relative pose and score 180 deg."""
+def eval_scene(preds, clusters, gt, labels, scene):
+    """Two standard views of pose accuracy for one scene.
+
+    AUC@5/10/20 of the relative-pose error, as reported across the feature-matching
+    literature; and, after a Sim(3) alignment to ground truth, the absolute camera
+    centre and rotation error, as reported in the SfM literature. The absolute figures
+    are computed inside the scene's dominant reconstruction -- across two
+    reconstructions there is no common gauge to align in.
+    """
     names = sorted(n for n in gt if labels[n] == scene)
-    errs = []
-    for a in range(len(names)):
-        for b in range(a + 1, len(names)):
-            na, nb = names[a], names[b]
-            Rg, tg = relative_pose(*gt[na], *gt[nb])
-            if na not in preds or nb not in preds or clusters.get(na) != clusters.get(nb):
-                errs.append(180.0)
-                continue
-            Rp, tp = relative_pose(*preds[na], *preds[nb])
-            errs.append(max(rot_err_deg(Rp, Rg), trans_err_deg(tp, tg)))
-    errs = np.array(errs)
-    per = {t: float((errs < t).mean()) for t in thresholds}
-    return float(np.mean(list(per.values()))), per
+    errs = relative_pose_errors(preds, gt, names, clusters)
+    auc = pose_auc(errs)
+
+    reg = [n for n in names if n in preds]
+    out = dict(auc=auc, n_pairs=len(errs), abs_pos=float('nan'),
+               abs_rot=float('nan'), frac=0.0, flipped=0)
+    if reg:
+        dominant = Counter(clusters[n] for n in reg).most_common(1)[0][0]
+        sel = [n for n in reg if clusters[n] == dominant]
+        out['frac'] = len(sel) / len(names)
+        pos, rot, _ = absolute_pose_errors(preds, gt, sel)
+        if len(pos):
+            out['abs_pos'] = float(np.median(pos))
+            out['abs_rot'] = float(np.median(rot))
+            out['flipped'] = int((rot > 170).sum())   # cameras pointing the wrong way
+    return out
 
 
 def link_diagnostics(feature_dir, db_path, labels):
@@ -330,8 +338,14 @@ def main():
         print('        so ground truth lives in two independent coordinate frames and')
         print('        only within-session pose error is meaningful.')
     for s in sorted(set(labels.values())):
-        m, per = maa_within_scene(r['preds'], gt, labels, r['clusters'], s)
-        print(f'  {s:<12s} mAA={m:.4f}  [{" ".join(f"{per[t]:.3f}" for t in sorted(per))}]')
+        m = eval_scene(r['preds'], r['clusters'], gt, labels, s)
+        a = m['auc']
+        line = (f'  {s:<12s} AUC@5/10/20 = {a[0]:.3f} / {a[1]:.3f} / {a[2]:.3f}'
+                f'   | abs {m["abs_pos"]:.3f} m, {m["abs_rot"]:.3f} deg'
+                f'  ({m["frac"]*100:.0f}% in dominant reconstruction)')
+        if m['flipped']:
+            line += f'  [{m["flipped"]} cameras >170 deg off -- degenerate]'
+        print(line)
 
     if len(set(labels.values())) > 1:
         print()

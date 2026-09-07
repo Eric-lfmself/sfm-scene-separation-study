@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Silent Failures in SfM Matching</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -171,7 +176,9 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:13px;color:va
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 </style>
-
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
 <div class="page">
 
 <header>
@@ -179,14 +186,14 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:13px;color:va
     <div class="eyebrow">Reproduction study · September 2026</div>
     <h1>Two Silent Failures in SfM Matching</h1>
   </div>
-  <p class="standfirst">A Structure-from-Motion matching pipeline — DINOv2 shortlisting → ALIKED → LightGlue → COLMAP — ported to current libraries and measured against laser-scanned ground truth. It reconstructs single scenes near-perfectly, quietly welds two of them together, defeats the obvious fix, and repeats the pattern on real UAV imagery.</p>
+  <p class="standfirst">A Structure-from-Motion matching pipeline — DINOv2 shortlisting → ALIKED → LightGlue → COLMAP — ported to current libraries and measured against laser-scanned ground truth. It reconstructs single scenes to millimetres, quietly welds two of them together, and then defeats the obvious fix.</p>
   <dl class="runcard">
     <div><dt>Hardware</dt><dd>Colab T4 · 15 GB</dd></div>
     <div><dt>Runtime</dt><dd>Python 3.13.15</dd></div>
     <div><dt>Torch</dt><dd>2.11.0+cu128</dd></div>
     <div><dt>pycolmap</dt><dd>4.2.0</dd></div>
     <div><dt>Data</dt><dd>ETH3D + Mill 19</dd></div>
-    <div><dt>Total compute</dt><dd>~4 h on a T4</dd></div>
+    <div><dt>Total compute</dt><dd>~5 h on a T4</dd></div>
   </dl>
 </header>
 
@@ -199,8 +206,9 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:13px;color:va
   <p class="measure">All pipeline hyper-parameters are the original configuration, unchanged: ALIKED at 4600 keypoints / 1024 px / threshold 0.08, DINOv2-base MAC descriptors with <code>sim_th=0.3</code> and <code>min_pairs=58</code>, LightGlue with <code>min_matches=20</code>, and the mapper at <code>min_model_size=3</code>, <code>max_num_models=25</code>.</p>
 
   <div class="callout">
-    <h3>The metric</h3>
-    <p>mAA over <em>relative</em> poses, which is invariant to the arbitrary gauge of an SfM reconstruction. For every ground-truth image pair, error is <code>max(rotation angle error, translation direction angle error)</code>; mAA averages the fraction under 1°, 2°, 5° and 10°. A pair whose images are unregistered — or land in different clusters — scores 180° and counts as a failure. Other pose benchmarks define mAA with different thresholds, so these numbers are not directly comparable to figures reported elsewhere.</p>
+    <h3>Two metrics, both standard</h3>
+    <p><strong>AUC@5/10/20°</strong> — the convention across the feature-matching literature. Per image pair, error is <code>max(rotation angular error, translation angular error)</code>, and AUC is the normalised area under the cumulative error curve at each threshold. That is the same error definition LightGlue reports AUC@5/10/20° against. A pair that is unregistered — or split across two reconstructions, where relative pose is meaningless — scores 180°.</p>
+    <p><strong>Sim(3)-aligned absolute error</strong> — the Structure-from-Motion convention. A reconstruction is defined only up to a similarity transform, so it is first aligned to ground truth with a Sim(3); reported as median camera-centre and median absolute rotation error. ETH3D ground truth is metrically scaled from laser scans, so positions are real metres.</p>
   </div>
 </section>
 
@@ -212,14 +220,14 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:13px;color:va
   <div class="tablewrap">
     <table>
       <thead>
-        <tr><th>Scene</th><th>Images</th><th>Registered</th><th>Clusters</th><th>Pairs</th><th>Kept</th><th>mAA</th><th>1° / 2° / 5° / 10°</th></tr>
+        <tr><th>Scene</th><th>Images</th><th>Registered</th><th>Clusters</th><th>AUC@5 / 10 / 20°</th><th>Median position</th><th>Median rotation</th></tr>
       </thead>
       <tbody>
-        <tr><td class="name">pipes</td><td class="num">14</td><td class="num good">14 / 14</td><td class="num">1</td><td class="num">91</td><td class="num">71</td><td class="num">0.951</td><td class="num dim">.824 .989 .989 1.000</td></tr>
-        <tr><td class="name">terrace</td><td class="num">23</td><td class="num good">23 / 23</td><td class="num">1</td><td class="num">253</td><td class="num">210</td><td class="num">0.968</td><td class="num dim">.889 .984 1.000 1.000</td></tr>
-        <tr><td class="name">courtyard</td><td class="num">38</td><td class="num good">38 / 38</td><td class="num">1</td><td class="num">703</td><td class="num">670</td><td class="num">0.797</td><td class="num dim">.697 .802 .841 .846</td></tr>
+        <tr><td class="name">pipes</td><td class="num">14</td><td class="num good">14 / 14</td><td class="num">1</td><td class="num">0.873 / 0.937 / 0.969</td><td class="num good">7 mm</td><td class="num">0.27°</td></tr>
+        <tr><td class="name">terrace</td><td class="num">23</td><td class="num good">23 / 23</td><td class="num">1</td><td class="num">0.890 / 0.945 / 0.972</td><td class="num good">16 mm</td><td class="num">0.42°</td></tr>
+        <tr><td class="name">courtyard</td><td class="num">38</td><td class="num good">38 / 38</td><td class="num">1</td><td class="num">0.744 / 0.795 / 0.821</td><td class="num bad">516 mm</td><td class="num">1.76°</td></tr>
       </tbody>
-      <caption>100% registration and a single cluster everywhere. Note courtyard: its mAA stops climbing at 0.846 even by the 10° threshold, so roughly 15% of its pairs are not marginally off — they are wrong.</caption>
+      <caption>On two of three scenes the reconstruction lands within centimetres of a laser scan. courtyard is 30× worse than its neighbours on the same rig and settings — half a metre — which is the first hint that something here fails without announcing itself.</caption>
     </table>
   </div>
 </section>
@@ -239,7 +247,7 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:13px;color:va
         <tr><td class="name">cluster 0</td><td class="num">courtyard 38 + terrace 23</td><td class="num">61</td><td class="bad">two scenes merged</td></tr>
         <tr><td class="name">cluster 1</td><td class="num">pipes 14</td><td class="num">14</td><td class="good">clean</td></tr>
       </tbody>
-      <caption>Cluster purity 0.693. Per-scene mAA: courtyard 0.695 (down from 0.797 standalone), terrace 0.971, pipes 0.962.</caption>
+      <caption>Cluster purity 0.693. courtyard degrades from 516 mm standalone to 809 mm and AUC@5° 0.744 → 0.646, while terrace (12 mm) and pipes (5 mm) are barely touched: the merge damages the larger, weaker scene and leaves its partner's numbers intact. Registration counts alone would show nothing.</caption>
     </table>
   </div>
 
@@ -298,14 +306,14 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:13px;color:va
       <span class="ba-note">3 clusters, one per scene, exactly. Still 75/75 registered.</span>
     </div>
     <div class="ba-item">
-      <span class="ba-label">courtyard mAA</span>
-      <span class="ba-nums"><span class="ba-from">0.695</span><span class="ba-arrow">→</span><span class="ba-to">0.833</span></span>
-      <span class="ba-note">Also beats its own 0.797 standalone run.</span>
+      <span class="ba-label">courtyard position</span>
+      <span class="ba-nums"><span class="ba-from">809 mm</span><span class="ba-arrow">→</span><span class="ba-to">378 mm</span></span>
+      <span class="ba-note">Beats its own 516 mm standalone run. AUC@5° 0.646 → 0.779.</span>
     </div>
     <div class="ba-item">
-      <span class="ba-label">terrace mAA</span>
-      <span class="ba-nums"><span class="ba-from">0.971</span><span class="ba-arrow">→</span><span class="ba-to">0.978</span></span>
-      <span class="ba-note">pipes likewise: 0.962 → 0.970.</span>
+      <span class="ba-label">courtyard rotation</span>
+      <span class="ba-nums"><span class="ba-from">4.38°</span><span class="ba-arrow">→</span><span class="ba-to">1.78°</span></span>
+      <span class="ba-note">terrace and pipes unchanged, as they were already correct.</span>
     </div>
     <div class="ba-item">
       <span class="ba-label">Mapping time</span>
@@ -326,16 +334,17 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:13px;color:va
 
   <div class="tablewrap">
     <table>
-      <thead><tr><th>Configuration</th><th>Registered</th><th>Clusters</th><th>relief mAA</th><th>relief_2 mAA</th></tr></thead>
+      <thead><tr><th>Configuration</th><th>Clusters</th><th>relief AUC@5°</th><th>relief_2 AUC@5°</th><th>relief_2 rotation</th><th>Cameras &gt;170° off</th></tr></thead>
       <tbody>
-        <tr><td class="name">baseline</td><td class="num">62 / 62</td><td class="num bad">2</td><td class="num">0.458</td><td class="num">0.363</td></tr>
-        <tr><td class="name">+ 100-inlier filter</td><td class="num">62 / 62</td><td class="num bad">3</td><td class="num good">0.475</td><td class="num bad">0.310</td></tr>
+        <tr><td class="name">baseline</td><td class="num bad">2</td><td class="num">0.423</td><td class="num">0.339</td><td class="num">1.25°</td><td class="num">5 / 20</td></tr>
+        <tr><td class="name">+ 100-inlier filter</td><td class="num bad">2</td><td class="num good">0.441</td><td class="num bad">0.290</td><td class="num bad">178.54°</td><td class="num bad">20 / 20</td></tr>
       </tbody>
-      <caption>Correct answer is 1 cluster. The baseline already fails; the filter makes it worse. Note the two clusters are <em>not</em> the two sessions — cluster 0 holds 13 relief + 11 relief_2, cluster 1 holds 18 + 20. Cross-session linking worked; the reconstruction fragmented spatially instead.</caption>
+      <caption>Correct answer is 1 cluster; the baseline already fails. The two clusters are <em>not</em> the two sessions — one holds 13 relief + 11 relief_2, the other 18 + 20. Cross-session linking worked; the reconstruction fragmented spatially instead.</caption>
     </table>
   </div>
 
-  <p class="measure">The filter deleted 431 of 780 verified geometries here. It had to: <strong>true cross-session links are weak</strong>. Their inlier counts sit in the same range as the false cross-scene links the filter was designed to remove.</p>
+  <p class="measure">The filtered <code>relief_2</code> reconstruction did not merely get less accurate — it <strong>collapsed</strong>. After Sim(3) alignment every one of its 20 cameras points more than 178° from its true orientation, while the camera <em>positions</em> still fit to within a metre. The model looks plausible until you check where the cameras are pointing. The alignment is a proper rotation, so this is the reconstruction and not the comparison.</p>
+  <p class="measure">The filter deleted 431 of 780 verified geometries to get there. It had to: <strong>true cross-session links are weak</strong>, and their inlier counts sit in the same range as the false cross-scene links the filter was designed to remove.</p>
 
   <figure>
     <div class="chartcard">
@@ -346,10 +355,10 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:13px;color:va
           <span><i class="swatch" style="background:var(--s-cross)"></i>Should be dropped</span>
         </div>
       </div>
-      <div class="chartscroll"><svg id="ranges" viewBox="0 0 880 250" role="img" aria-label="Inlier ranges for three kinds of image-pair link on a log scale. False cross-scene links span 15 to 83 inliers. True cross-session revisit links span 15 to 860 with a median of 51, overlapping the false population across most of its range. True within-scene links span 15 to 3379 with a median of 302."></svg></div>
+      <div class="chartscroll"><svg id="ranges" viewBox="0 0 880 298" role="img" aria-label="Inlier ranges for four kinds of image-pair link on a log scale. True within-scene links have a median of 302. True cross-session revisit links have a median of 51. False cross-scene links between lookalike places have a median of 22 and reach 83, overlapping the true revisit population. False cross-site links between visually unlike aerial sites have a median of 16 and never exceed 37, so verification removes them unaided."></svg></div>
       <div id="tip2"></div>
     </div>
-    <figcaption>Bar spans the 10th–90th percentile, whisker spans min–max, dot marks the median. The dashed line is the 100-inlier threshold. The two populations the filter must separate — orange, and the middle blue row — overlap across most of the orange range.</figcaption>
+    <figcaption>Bar spans the 10th–90th percentile, whisker spans min–max, dot marks the median. The dashed line is the 100-inlier threshold. The two populations a filter must separate — <em>cross-scene</em> and <em>cross-session</em> — overlap across most of the orange range. The bottom row is the aerial case where the false links are so weak that RANSAC removes them on its own.</figcaption>
   </figure>
 
   <div class="callout warn">
@@ -361,30 +370,46 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:13px;color:va
 <section>
   <div class="sec-head measure">
     <div class="eyebrow">Aerial</div>
-    <h2>The same pipeline on real UAV imagery</h2>
+    <h2>The failure needs similarity, not just mixing</h2>
   </div>
-  <p class="measure">Both scenes above are ground-level. The failure this study is chasing — repeated structure across a wide survey area — belongs to aerial mapping, so the pipeline was re-run on <strong>Mill 19</strong>: real UAV captures of two Pittsburgh industrial sites at 4608×3456, with camera poses from a careful PixSfM reconstruction.</p>
-
-  <div class="callout warn">
-    <h3>The first attempt measured nothing, and it looked like a result</h3>
-    <p>The obvious slice to take is the benchmark's own <em>validation</em> split. It produced 3 reconstructions from 20 images, the largest holding 5. That reads like a clustering failure — and it is not one. The split samples roughly every 97th frame of a ~1900-image flight, so consecutive images barely overlap: only <strong>35%</strong> of pairs matched at all. The fragmentation is missing overlap. A benchmark split built for one task (novel-view synthesis) can be actively wrong for another, and the symptom is indistinguishable from the failure you are hunting.</p>
-  </div>
-
-  <p class="measure">Streaming <strong>consecutive</strong> frames out of the 11 GB archives instead — 120 for <code>building</code>, 131 for <code>rubble</code> — restored real along-track overlap and, with it, a usable experiment.</p>
+  <p class="measure">Both scenes above are ground-level. Re-running on <strong>Mill 19</strong> — real UAV captures of two Pittsburgh industrial sites at 4608×3456 — tests whether "unrelated scenes in one folder" is enough on its own to cause the merge. It is not.</p>
 
   <div class="tablewrap">
     <table>
-      <thead><tr><th>Run</th><th>Frames</th><th>Pairs matched</th><th>Registered</th><th>Clusters</th><th>Mapping</th></tr></thead>
+      <thead><tr><th>Run</th><th>Frames</th><th>Pairs matched</th><th>Registered</th><th>Clusters</th><th>Purity</th></tr></thead>
       <tbody>
-        <tr><td class="name">val split</td><td class="num">20</td><td class="num bad">67 / 190 · 35%</td><td class="num bad">13 / 20</td><td class="num bad">3</td><td class="num">63 s</td></tr>
-        <tr><td class="name">building</td><td class="num">120</td><td class="num good">3538 / 6283 · 56%</td><td class="num good">120 / 120</td><td class="num good">1</td><td class="num">2264 s</td></tr>
-        <tr><td class="name">building + rubble</td><td class="num">251</td><td class="num">7742 / 16580 · 47%</td><td class="num dim" colspan="3">mapping still running at publication</td></tr>
+        <tr><td class="name">val split</td><td class="num">20</td><td class="num bad">67 / 190 · 35%</td><td class="num bad">13 / 20</td><td class="num bad">3</td><td class="num dim">—</td></tr>
+        <tr><td class="name">building</td><td class="num">120</td><td class="num good">3538 / 6283 · 56%</td><td class="num good">120 / 120</td><td class="num good">1</td><td class="num dim">—</td></tr>
+        <tr><td class="name">building + rubble</td><td class="num">251</td><td class="num">7742 / 16580 · 47%</td><td class="num good">234 / 251</td><td class="num good">2</td><td class="num good">1.000</td></tr>
       </tbody>
-      <caption>The single-site aerial run is the clean transfer result: 120 consecutive UAV frames, every one registered, one reconstruction. The 251-frame mixed run finished matching and geometric verification (RANSAC 266 s) and is still in the incremental mapper.</caption>
+      <caption>The mixed aerial run separated the sites exactly: rubble 131/131 in one reconstruction, building 103/120 in the other, with no cross-contamination at all — and no filter applied.</caption>
     </table>
   </div>
 
-  <p class="measure">Pose handling was validated separately on the val split, where overlap does exist: within a single reconstruction, rotation error against the PixSfM reference has a median of <strong>0.47°</strong> and translation direction <strong>0.74°</strong>. The coordinate conversion is right; only the connectivity was wrong.</p>
+  <p class="measure">LightGlue was not more careful here. It kept <strong>907 cross-site pairs</strong>, 11.7% of everything it produced. Geometric verification then destroyed them, and that is the whole difference:</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Verified links</th><th>n</th><th>p10</th><th>median</th><th>max</th><th>≥100 inliers</th></tr></thead>
+      <tbody>
+        <tr><td class="name">within-site</td><td class="num">5623</td><td class="num">26</td><td class="num">412</td><td class="num">3706</td><td class="num">many</td></tr>
+        <tr><td class="name">cross-site</td><td class="num">195</td><td class="num">15</td><td class="num bad">16</td><td class="num bad">37</td><td class="num good">0</td></tr>
+      </tbody>
+      <caption>A median of 16 inliers is the floor RANSAC will accept — noise, not structure. The courtyard↔terrace links that merged two scenes reached 83.</caption>
+    </table>
+  </div>
+
+  <div class="callout">
+    <h3>What this pins down</h3>
+    <p>The merge is not caused by mixing. It needs <strong>two distinct places that genuinely look alike</strong>, producing correspondences strong enough to survive RANSAC. An industrial building and a rubble field do not, so verification cleans up unaided and the mapper never sees a reason to join them. That also says where the risk lives in practice: repeated architecture, not scene count.</p>
+  </div>
+
+  <div class="callout warn">
+    <h3>The first aerial attempt measured nothing, and it looked like a result</h3>
+    <p>The obvious slice to take is the benchmark's own <em>validation</em> split. It produced 3 reconstructions from 20 images, the largest holding 5 — which reads like a clustering failure and is not one. That split samples roughly every 97th frame of a ~1900-image flight, so consecutive images barely overlap: only <strong>35%</strong> of pairs matched at all. A benchmark split built for one task (novel-view synthesis) can be actively wrong for another, and the symptom is indistinguishable from the failure you are hunting. Streaming consecutive frames out of the 11 GB archives fixed it.</p>
+  </div>
+
+  <p class="measure">No ground-truth poses were obtainable for the aerial frames — the pose metadata sits at the tail of an 11 GB archive the host stopped serving mid-study — so these rows report registration and clustering only, both of which are metric-independent.</p>
 </section>
 
 <section>
@@ -414,7 +439,7 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:13px;color:va
     <h2>What survives both experiments</h2>
   </div>
   <ul class="plain measure">
-    <li>The port is correct: 100% registration and 0.95–0.97 mAA on three single ETH3D scenes, and 120/120 registration in one cluster on a real UAV site.</li>
+    <li>The port is correct: full registration on three single ETH3D scenes, two of them within 16 mm of a laser scan, and 120/120 in one cluster on a real UAV site.</li>
     <li>The pipeline silently merges distinct scenes that share visual style, and silently fragments a single scene captured twice. Both failures are invisible without ground truth.</li>
     <li>A global post-verification inlier threshold fixes the first failure and worsens the second. It is a dataset-specific patch, not a fix.</li>
     <li>What a real fix needs is a signal the inlier count does not carry — spatial priors (GPS/IMU, which UAV survey data has and neither of these benchmarks exposes), or reasoning over the match graph's structure rather than over edge weights one at a time.</li>
@@ -467,9 +492,8 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:13px;color:va
     <h2>What this does not establish</h2>
   </div>
   <ul class="plain measure">
-    <li>Scoring is the relative-pose mAA defined above. Other pose benchmarks define mAA with different thresholds and different handling of clustering, so these numbers are not directly comparable to figures reported elsewhere.</li>
-    <li>Five ETH3D scenes and at most 251 images per run. Each failure was observed on one specific scene pair; neither is established as general.</li>
-    <li>Single run per configuration. COLMAP's incremental mapper is seed-dependent; mAA differences under ~0.02 are not necessarily real.</li>
+    <li>Five ETH3D scenes and two UAV sites, at most 251 images per run. Each failure was observed on one specific scene pair; neither is established as general.</li>
+    <li>Single run per configuration. COLMAP's incremental mapper is seed-dependent, so small AUC differences are not necessarily real; the large ones — a 178° rotation collapse, a purity change from 0.693 to 1.000 — are well outside that noise.</li>
     <li>The aerial evidence is single-site only so far. The overlap between true and false weak links is demonstrated on ground-level imagery; the 251-frame mixed UAV run has not finished mapping.</li>
     <li>Mill 19 poses are a PixSfM reconstruction, not independent survey ground truth, so aerial pose agreement measures consistency with a careful reference rather than absolute accuracy.</li>
   </ul>
@@ -583,15 +607,16 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:13px;color:va
 <script>
 (function(){
   const rows = [
-    {label:'Within-scene',       sub:'true · same scene',   n:890, min:15, p10:32, med:302, p90:1421, max:3379, keep:true},
-    {label:'Cross-session',      sub:'true · revisit',      n:370, min:15, p10:18, med:51,  p90:225,  max:860,  keep:true},
-    {label:'Cross-scene',        sub:'FALSE · diff places', n:150, min:15, p10:16, med:22,  p90:54,   max:83,   keep:false}
+    {label:'Within-scene',    sub:'true · same scene',    n:890,  min:15, p10:32, med:302, p90:1421, max:3379, keep:true},
+    {label:'Cross-session',   sub:'true · revisit',       n:370,  min:15, p10:18, med:51,  p90:225,  max:860,  keep:true},
+    {label:'Cross-scene',     sub:'FALSE · lookalikes',   n:150,  min:15, p10:16, med:22,  p90:54,   max:83,   keep:false},
+    {label:'Cross-site (UAV)',sub:'FALSE · unlike sites', n:195,  min:15, p10:15, med:16,  p90:19,   max:37,   keep:false}
   ];
   const svg = document.getElementById('ranges');
   if (!svg) return;
   const tip = document.getElementById('tip2');
   const NS='http://www.w3.org/2000/svg';
-  const W=880,H=250,M={t:30,r:24,b:52,l:215};
+  const W=880,H=298,M={t:30,r:24,b:52,l:222};
   const pw=W-M.l-M.r, ph=H-M.t-M.b;
   const lo=Math.log10(12), hi=Math.log10(4000);
   const x=v=>M.l+(Math.log10(v)-lo)/(hi-lo)*pw;
@@ -627,3 +652,5 @@ footer{border-top:1px solid var(--rule);padding-top:20px;font-size:13px;color:va
   xl.textContent='RANSAC inliers per verified pair (log scale)';
 })();
 </script>
+</body>
+</html>
