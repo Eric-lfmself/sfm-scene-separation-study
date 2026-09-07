@@ -183,10 +183,10 @@ src/sfm_pipeline.py      the ported pipeline: retrieval, detection, matching,
                          COLMAP ingestion (pycolmap 4.x), ground truth, metrics
 src/run_experiments.py   dataset builders, the experiment driver, link diagnostics,
                          and the inlier-filter ablation
-report/index.html        the written study, with the two figures
-RESULTS.md               every number, including timings
+RESULTS.md               every number, every timing, and the two figures
 docs/porting-notes.md    the four API breakages, with before/after
-notebooks/               the original working log (see notebooks/README.md)
+figures/                 the figures as static SVG, light and dark
+tools/make_figures.py    regenerates them
 ```
 
 ## Running it

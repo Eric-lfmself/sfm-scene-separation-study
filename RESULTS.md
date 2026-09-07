@@ -113,6 +113,15 @@ Threshold sweep:
 | 100 | 652 | 0 | 0.0% |
 | 200 | 532 | 0 | 0.0% |
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="figures/inlier-histogram-dark.svg">
+  <img alt="Histogram of RANSAC inliers per verified image pair. Cross-scene pairs are confined below 83 inliers; within-scene pairs spread to 3379." src="figures/inlier-histogram-light.svg">
+</picture>
+
+Log-spaced bins. Cross-scene pairs peak at 15–22 inliers and stop entirely at 83;
+within-scene pairs have a median of 302 and reach 3379. Nothing above 100 inliers is a
+cross-scene pair.
+
 ### Ablation: drop verified geometries below 100 inliers
 
 388 of 1040 geometries dropped. Mapping 172.0 s (from 448.6 s).
@@ -205,6 +214,16 @@ orientation is checked.
 
 A threshold removing all 150 false cross-scene links (84) removes 80% of the 370 true
 cross-session links.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="figures/link-ranges-dark.svg">
+  <img alt="Inlier ranges for four kinds of image-pair link on a log scale. True within-scene links have a median of 302 and true cross-session revisit links a median of 51. False cross-scene links between lookalike places have a median of 22 and reach 83, overlapping the true revisit population. False cross-site links between visually unlike aerial sites have a median of 16 and never exceed 37." src="figures/link-ranges-light.svg">
+</picture>
+
+Bar spans the 10th–90th percentile, whisker spans min–max, dot marks the median. The two
+populations a filter has to separate — *cross-scene* and *cross-session* — overlap across
+most of the orange range. The bottom row is the aerial case, where the false links are so
+weak that RANSAC removes them unaided.
 
 ---
 
