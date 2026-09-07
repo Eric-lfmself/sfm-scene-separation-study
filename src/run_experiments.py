@@ -1,0 +1,344 @@
+"""
+Experiment driver for the SfM matching pipeline study.
+
+Fetches ETH3D scenes, assembles single-scene / mixed-scene / revisit datasets,
+runs the pipeline, and reports registration, cluster purity, relative-pose mAA
+and the cross-scene link diagnostics.
+
+    python run_experiments.py --fetch eth3d --scenes courtyard terrace pipes
+    python run_experiments.py --experiment mixed3
+    python run_experiments.py --experiment mixed3  --min-inliers 100
+    python run_experiments.py --experiment revisit --min-inliers 100
+
+Needs a CUDA GPU. See ../README.md for the environment.
+"""
+
+import argparse
+import os
+import glob
+import shutil
+import subprocess
+import sys
+from collections import Counter, defaultdict
+from time import time
+
+import numpy as np
+import h5py
+import torch
+import pycolmap
+
+from sfm_pipeline import (
+    detect_aliked,
+    get_image_pairs_shortlist,
+    import_into_colmap,
+    maa_relative_pose,
+    match_with_lightglue,
+    read_colmap_images_txt,
+    relative_pose,
+    rot_err_deg,
+    trans_err_deg,
+)
+
+KMAX = 2147483647  # COLMAP's kMaxNumImages, used to decode pair ids
+
+DATA = os.environ.get('SFM_DATA', '/content/eth3d')
+WORK = os.environ.get('SFM_WORK', '/content/work')
+
+# Scenes used in the study. relief and relief_2 are the SAME physical interior
+# photographed in two sessions -- the revisit case, where one cluster is correct.
+EXPERIMENTS = {
+    'pipes':     dict(scenes=['pipes']),
+    'terrace':   dict(scenes=['terrace']),
+    'courtyard': dict(scenes=['courtyard']),
+    'mixed3':    dict(scenes=['courtyard', 'terrace', 'pipes'], expect_clusters=3),
+    'revisit':   dict(scenes=['relief', 'relief_2'], expect_clusters=1, same_place=True),
+}
+
+
+# ----------------------------------------------------------------- data
+
+def fetch_eth3d(scenes):
+    """Download + extract ETH3D high-res multi-view scenes (undistorted DSLR)."""
+    os.makedirs(DATA, exist_ok=True)
+    subprocess.run('apt-get -qq install -y p7zip-full', shell=True, capture_output=True)
+    for s in scenes:
+        if os.path.isdir(f'{DATA}/{s}/images'):
+            print(f'{s}: already present')
+            continue
+        url = f'https://www.eth3d.net/data/{s}_dslr_undistorted.7z'
+        print(f'{s}: downloading {url}', flush=True)
+        subprocess.run(f'wget -q -O {DATA}/{s}.7z {url}', shell=True, check=True)
+        subprocess.run(f'7z x -y -o{DATA} {DATA}/{s}.7z > /dev/null', shell=True, check=True)
+        os.remove(f'{DATA}/{s}.7z')
+        n = len(glob.glob(f'{DATA}/{s}/images/dslr_images_undistorted/*.JPG'))
+        print(f'{s}: {n} images')
+
+
+def scene_images(scene):
+    return sorted(glob.glob(f'{DATA}/{scene}/images/dslr_images_undistorted/*.JPG'))
+
+
+def build_dataset(name, scenes):
+    """Symlink scenes into one folder. Returns (images_dir, gt, labels).
+
+    For a multi-scene set, filenames are prefixed with the scene so they stay unique
+    and so every image carries its true scene label for the purity metric.
+    """
+    d = f'{WORK}/{name}/images'
+    os.makedirs(d, exist_ok=True)
+    gt, labels = {}, {}
+    multi = len(scenes) > 1
+    for s in scenes:
+        poses = read_colmap_images_txt(f'{DATA}/{s}/dslr_calibration_undistorted/images.txt')
+        for p in scene_images(s):
+            b = os.path.basename(p)
+            key = f'{s}__{b}' if multi else b
+            dst = os.path.join(d, key)
+            if not os.path.exists(dst):
+                os.symlink(p, dst)
+            labels[key] = s
+            if b in poses:
+                gt[key] = poses[b]
+    return d, gt, labels
+
+
+# ------------------------------------------------------------- pipeline
+
+def cam_from_world(im):
+    """pycolmap 4.x turned this into a method derived from the image's frame."""
+    c = im.cam_from_world
+    c = c() if callable(c) else c
+    return c.rotation.matrix(), np.asarray(c.translation)
+
+
+def run_dataset(name, images_dir, device, args):
+    images = sorted(glob.glob(images_dir + '/*'))
+    feature_dir = f'{WORK}/{name}/featureout'
+    os.makedirs(feature_dir, exist_ok=True)
+    T = {}
+
+    t = time()
+    pairs = get_image_pairs_shortlist(images, args.sim_th, args.min_pairs,
+                                      args.exhaustive_if_less, device)
+    T['shortlist'] = time() - t
+    n_possible = len(images) * (len(images) - 1) // 2
+    print(f'  shortlist: {len(pairs)} of {n_possible} possible pairs '
+          f'({100*len(pairs)/max(n_possible,1):.0f}%) in {T["shortlist"]:.1f}s', flush=True)
+
+    t = time()
+    detect_aliked(images, feature_dir, args.num_features, args.resize_to, device=device)
+    T['detect'] = time() - t
+    print(f'  aliked:    {T["detect"]:.1f}s', flush=True)
+
+    t = time()
+    match_with_lightglue(images, pairs, feature_dir, device, args.min_matches)
+    T['match'] = time() - t
+    print(f'  lightglue: {T["match"]:.1f}s', flush=True)
+
+    db_path = f'{feature_dir}/colmap.db'
+    _, n_kept = import_into_colmap(images_dir, feature_dir, db_path)
+    print(f'  kept {n_kept} pairs with >= {args.min_matches} matches', flush=True)
+
+    t = time()
+    pycolmap.match_exhaustive(db_path)
+    T['ransac'] = time() - t
+    print(f'  ransac:    {T["ransac"]:.1f}s', flush=True)
+
+    preds, clusters, n_models = map_and_collect(name, db_path, images_dir, args, T)
+    return dict(name=name, images=images, n_pairs=len(pairs), n_kept=n_kept,
+                preds=preds, clusters=clusters, n_clusters=n_models, timings=T,
+                feature_dir=feature_dir, db_path=db_path)
+
+
+def map_and_collect(name, db_path, images_dir, args, T, tag=''):
+    opts = pycolmap.IncrementalPipelineOptions()
+    opts.min_model_size = args.min_model_size
+    opts.max_num_models = args.max_num_models
+    out = f'{WORK}/{name}/rec{tag}'
+    os.makedirs(out, exist_ok=True)
+    t = time()
+    maps = pycolmap.incremental_mapping(database_path=db_path, image_path=images_dir,
+                                        output_path=out, options=opts)
+    T['mapping'] = time() - t
+    print(f'  mapping:   {T["mapping"]:.1f}s', flush=True)
+    preds, clusters = {}, {}
+    for mi, rec in maps.items():
+        for _, im in rec.images.items():
+            preds[im.name] = cam_from_world(im)
+            clusters[im.name] = mi
+    return preds, clusters, len(maps)
+
+
+def refilter_and_map(name, db_path, images_dir, min_inliers, args):
+    """Drop verified two-view geometries below `min_inliers`, then re-run the mapper.
+
+    Matching is untouched -- this is a post-verification edge filter only.
+    """
+    dst = db_path.replace('.db', f'_inl{min_inliers}.db')
+    shutil.copy(db_path, dst)
+    db = pycolmap.Database.open(dst)
+    pair_ids, tvgs = db.read_two_view_geometries()
+    dropped = 0
+    for pid, tvg in zip(pair_ids, tvgs):
+        if len(tvg.inlier_matches) < min_inliers:
+            db.delete_two_view_geometry(pid // KMAX, pid % KMAX)
+            dropped += 1
+    db.close()
+    print(f'  dropped {dropped} / {len(pair_ids)} geometries below {min_inliers} inliers',
+          flush=True)
+    T = {}
+    return map_and_collect(name, dst, images_dir, args, T, tag=f'_inl{min_inliers}') + (T,)
+
+
+# ------------------------------------------------------------ reporting
+
+def show_clusters(clusters, labels, expect=None):
+    comp = defaultdict(Counter)
+    for n, c in clusters.items():
+        comp[c][labels[n]] += 1
+    print('  cluster composition:')
+    for c in sorted(comp):
+        print(f'    cluster {c:<3d} {dict(comp[c])}  size={sum(comp[c].values())}')
+    total = sum(sum(v.values()) for v in comp.values())
+    purity = sum(max(v.values()) for v in comp.values()) / max(total, 1)
+    note = ''
+    if expect is not None:
+        note = '  <-- CORRECT' if len(comp) == expect else f'  <-- expected {expect}'
+    print(f'    purity = {purity:.4f}  ({len(comp)} clusters over {total} registered){note}')
+    return purity
+
+
+def maa_within_scene(preds, gt, labels, clusters, scene, thresholds=(1, 2, 5, 10)):
+    """mAA over pairs inside one scene. Pairs that are unregistered, or split across
+    different clusters, have no meaningful predicted relative pose and score 180 deg."""
+    names = sorted(n for n in gt if labels[n] == scene)
+    errs = []
+    for a in range(len(names)):
+        for b in range(a + 1, len(names)):
+            na, nb = names[a], names[b]
+            Rg, tg = relative_pose(*gt[na], *gt[nb])
+            if na not in preds or nb not in preds or clusters.get(na) != clusters.get(nb):
+                errs.append(180.0)
+                continue
+            Rp, tp = relative_pose(*preds[na], *preds[nb])
+            errs.append(max(rot_err_deg(Rp, Rg), trans_err_deg(tp, tg)))
+    errs = np.array(errs)
+    per = {t: float((errs < t).mean()) for t in thresholds}
+    return float(np.mean(list(per.values()))), per
+
+
+def link_diagnostics(feature_dir, db_path, labels):
+    """Where do the cross-scene links come from, and how strong are they?"""
+    kept = Counter()
+    with h5py.File(f'{feature_dir}/matches.h5', 'r') as f:
+        for k1 in f.keys():
+            for k2 in f[k1].keys():
+                kept.update([tuple(sorted((labels[k1], labels[k2])))])
+    print('  LightGlue pairs kept, by scene pair:')
+    for k, v in sorted(kept.items(), key=lambda x: -x[1]):
+        tag = 'WITHIN' if k[0] == k[1] else 'CROSS '
+        print(f'    {tag}  {k[0]} | {k[1]:<24s} {v:6d}')
+
+    db = pycolmap.Database.open(db_path)
+    id2name = {im.image_id: im.name for im in db.read_all_images()}
+    pair_ids, tvgs = db.read_two_view_geometries()
+    win, cro = [], []
+    for pid, tvg in zip(pair_ids, tvgs):
+        n = len(tvg.inlier_matches)
+        if n == 0:
+            continue
+        a, b = id2name[pid // KMAX], id2name[pid % KMAX]
+        (win if labels[a] == labels[b] else cro).append(n)
+    db.close()
+    win, cro = np.array(win), np.array(cro)
+
+    def stat(x, tag):
+        if len(x) == 0:
+            print(f'    {tag:<14s} n=0')
+            return
+        print(f'    {tag:<14s} n={len(x):5d}  min {x.min():4d}  p10 {np.percentile(x,10):5.0f}  '
+              f'median {np.median(x):6.0f}  p90 {np.percentile(x,90):7.0f}  max {x.max():6d}')
+
+    print('  verified-geometry inliers:')
+    stat(win, 'within-scene')
+    stat(cro, 'CROSS-scene')
+    if len(cro):
+        print('  threshold sweep:')
+        for t in [20, 40, 60, 84, 100, 150, 200, 300]:
+            w, c = int((win >= t).sum()), int((cro >= t).sum())
+            print(f'    >={t:<5d} within {w:6d}   cross {c:5d}   '
+                  f'contamination {100*c/max(w+c,1):5.1f}%')
+    return win, cro
+
+
+# ----------------------------------------------------------------- main
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument('--fetch', choices=['eth3d'])
+    p.add_argument('--scenes', nargs='+', default=['courtyard', 'terrace', 'pipes'])
+    p.add_argument('--experiment', choices=sorted(EXPERIMENTS))
+    p.add_argument('--min-inliers', type=int, default=None,
+                   help='post-verification inlier filter; re-runs mapping only')
+    # the pipeline's original hyper-parameters, unchanged by default
+    p.add_argument('--sim-th', type=float, default=0.3)
+    p.add_argument('--min-pairs', type=int, default=58)
+    p.add_argument('--exhaustive-if-less', type=int, default=22)
+    p.add_argument('--num-features', type=int, default=4600)
+    p.add_argument('--resize-to', type=int, default=1024)
+    p.add_argument('--min-matches', type=int, default=20)
+    p.add_argument('--min-model-size', type=int, default=3)
+    p.add_argument('--max-num-models', type=int, default=25,
+                   help='default is 25; lower it for mixed-scene runs')
+    args = p.parse_args()
+
+    if args.fetch == 'eth3d':
+        fetch_eth3d(args.scenes)
+        if not args.experiment:
+            return
+
+    if not args.experiment:
+        p.error('nothing to do: pass --experiment (or --fetch)')
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if device.type != 'cuda':
+        print('WARNING: no CUDA device; this will be extremely slow', file=sys.stderr)
+
+    cfg = EXPERIMENTS[args.experiment]
+    print(f'=== {args.experiment}: {" + ".join(cfg["scenes"])} ===', flush=True)
+    images_dir, gt, labels = build_dataset(args.experiment, cfg['scenes'])
+    print(f'  {len(labels)} images, {len(gt)} with ground truth', flush=True)
+
+    r = run_dataset(args.experiment, images_dir, device, args)
+    print(f'  -> registered {len(r["preds"])}/{len(r["images"])} '
+          f'in {r["n_clusters"]} clusters', flush=True)
+
+    if args.min_inliers:
+        print(f'\n--- ablation: drop geometries below {args.min_inliers} inliers ---')
+        preds, clusters, n_models, T = refilter_and_map(
+            args.experiment, r['db_path'], images_dir, args.min_inliers, args)
+        print(f'  -> registered {len(preds)}/{len(r["images"])} in {n_models} clusters')
+        r = dict(r, preds=preds, clusters=clusters, n_clusters=n_models)
+
+    print()
+    show_clusters(r['clusters'], labels, cfg.get('expect_clusters'))
+
+    print()
+    if cfg.get('same_place'):
+        print('  NOTE: these two sets are the same physical scene photographed twice,')
+        print('        so ground truth lives in two independent coordinate frames and')
+        print('        only within-session pose error is meaningful.')
+    for s in sorted(set(labels.values())):
+        m, per = maa_within_scene(r['preds'], gt, labels, r['clusters'], s)
+        print(f'  {s:<12s} mAA={m:.4f}  [{" ".join(f"{per[t]:.3f}" for t in sorted(per))}]')
+
+    if len(set(labels.values())) > 1:
+        print()
+        link_diagnostics(r['feature_dir'], r['db_path'], labels)
+
+    print('\n  timings (s):', {k: round(v, 1) for k, v in r['timings'].items()})
+
+
+if __name__ == '__main__':
+    main()

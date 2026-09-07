@@ -1,0 +1,22 @@
+# data + intermediates (regenerate with run_experiments.py --fetch)
+data/
+work/
+*.7z
+*.tgz
+*.zip
+*.h5
+*.db
+*.db-journal
+featureout/
+rec*/
+
+# python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# os
+.DS_Store
+Thumbs.db
