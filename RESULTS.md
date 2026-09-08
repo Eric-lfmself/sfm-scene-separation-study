@@ -1,300 +1,201 @@
-# Full results
+# Results
 
-Environment: Colab T4 (15 GB), Python 3.13.15, torch 2.11.0+cu128, pycolmap 4.2.0,
-kornia 0.8.3, transformers 5.16.1. One run per configuration.
+Every number below comes from one Colab session on a single Tesla T4, with
+Python 3.13.15, torch 2.11.0+cu128, pycolmap 4.2.0, kornia 0.8.3, transformers 5.16.1.
+Raw logs are one per run; each table cell traces to a line in one of them.
 
-Pipeline hyper-parameters are the original configuration, unchanged throughout:
-ALIKED 4600 keypoints / 1024 px / threshold 0.08 · DINOv2-base MAC descriptors with
-`sim_th=0.3`, `min_pairs=58`, `exhaustive_if_less=22` · LightGlue via
-`kornia.feature.LightGlueMatcher('aliked')` with `min_matches=20` · mapper with
-`min_model_size=3`, `max_num_models=25`.
+## The three configurations
+
+The point of the study is a controlled comparison, so everything downstream of the
+feature database is the *same code path* for all three: the same
+`pycolmap.incremental_mapping` call, the same options, the same metrics.
+
+| | pair selection | detector | matcher | budget |
+|---|---|---|---|---|
+| `learned` | DINOv2 shortlist | ALIKED | LightGlue | 4600 features, 1024 px |
+| `colmap-shortlist` | DINOv2 shortlist | SIFT | nearest neighbour + ratio test | 4600 features, 1024 px |
+| `colmap-default` | exhaustive | SIFT | nearest neighbour + ratio test | COLMAP stock: 8192 features, 3200 px |
+
+`learned` and `colmap-shortlist` see **the identical set of image pairs** at **the
+identical feature budget and input resolution**. The only difference between them is the
+detector and the matcher. `colmap-default` is COLMAP as shipped, and is included because
+that is what a pipeline like this is usually being compared against.
+
+## A timing caveat that has to come first
+
+`pycolmap.has_cuda` is `False` on every published wheel. SIFT detection and
+nearest-neighbour matching therefore run on the CPU, while ALIKED and LightGlue go
+through torch and run on the GPU. **Front-end timings across configurations compare a
+GPU against a CPU and are not meaningful.** They are listed for completeness and marked.
+
+`incremental_mapping` is the exception: COLMAP maps on the CPU in every configuration,
+through the identical call. Mapping time is comparable and is the only timing used for
+any claim here.
 
 ## Metrics
 
-**AUC@5/10/20°.** Per image pair, error = `max(rotation angular error, translation
-angular error)`; AUC is the normalised area under the cumulative error curve at each
-threshold — the convention used across the feature-matching literature, and the same
-error definition LightGlue reports against. Unregistered pairs, and pairs split across
-two reconstructions, score 180°.
+**AUC@5/10/20°** — per image pair, error = `max(rotation angular error, translation
+angular error)`; AUC is the normalised area under the cumulative error curve. Pairs that
+are unregistered, or that land in two different reconstructions, score 180°.
 
-**Sim(3)-aligned absolute error.** An SfM reconstruction is defined only up to a
-similarity transform, so camera centres are aligned to ground truth with a Sim(3)
-(Umeyama) before comparison. Reported as median camera-centre error and median absolute
-rotation error, computed inside the scene's dominant reconstruction. ETH3D ground truth
-is metrically scaled from laser scans, so positions are in real metres.
+**Sim(3)-aligned absolute error** — the reconstruction is aligned to ground truth with a
+similarity transform, then median camera-centre error and median absolute rotation error
+are reported. ETH3D ground truth is metrically scaled from laser scans, so the position
+column is real millimetres.
+
+**Inlier ratio** — pooled over every matched pair: RANSAC inliers / putative matches.
+This is what "matching precision" means in the feature-matching literature.
+
+**Pair precision** — of the image pairs that passed geometric verification, the fraction
+that are genuinely the same scene. Note the sign flips for the revisit experiment, where
+cross-session pairs are *true* links; that table is annotated accordingly.
 
 ---
 
-## 1. ETH3D single scenes
+## Single scenes
 
-| Scene | Images | Registered | Clusters | AUC@5 / 10 / 20° | Median position | Median rotation |
+| Scene | Config | Registered | AUC@5 / 10 / 20° | Median position | Median rotation | Mapping |
 |---|---|---|---|---|---|---|
-| pipes | 14 | 14 / 14 | 1 | 0.873 / 0.937 / 0.969 | 0.007 m | 0.268° |
-| terrace | 23 | 23 / 23 | 1 | 0.890 / 0.945 / 0.972 | 0.016 m | 0.422° |
-| courtyard | 38 | 38 / 38 | 1 | 0.744 / 0.795 / 0.821 | 0.516 m | 1.758° |
+| `pipes` (14) | learned | 14 / 14 | 0.890 / 0.947 / 0.973 | 6 mm | 0.255° | 10.4 s |
+| | colmap-shortlist | **8 / 14** | 0.241 / 0.271 / 0.289 | 12 mm | 0.624° | 7.8 s |
+| | colmap-default | 14 / 14 | **0.928 / 0.964 / 0.982** | **5 mm** | **0.238°** | 11.4 s |
+| `terrace` (23) | learned | 23 / 23 | 0.893 / 0.946 / 0.973 | 16 mm | 0.430° | 36.0 s |
+| | colmap-shortlist | 23 / 23 | 0.931 / 0.966 / 0.983 | 7 mm | 0.285° | 16.8 s |
+| | colmap-default | 23 / 23 | **0.932 / 0.966 / 0.983** | **7 mm** | **0.285°** | 31.9 s |
+| `courtyard` (38) | learned | 38 / 38 | 0.643 / 0.698 / 0.726 | **1111 mm** | 5.331° | 154.2 s |
+| | colmap-shortlist | 38 / 38 | 0.891 / 0.945 / 0.973 | **29 mm** | 0.168° | 48.4 s |
+| | colmap-default | 38 / 38 | **0.899 / 0.949 / 0.975** | 31 mm | 0.180° | 105.6 s |
 
-Timings (seconds):
+Two things in this table are worth stating plainly.
 
-| Scene | shortlist | detect | match | ransac | mapping |
-|---|---|---|---|---|---|
-| pipes | 0.0 | 13.5 | 3.6 | 0.8 | 10.0 |
-| terrace | 30.7 | 16.2 | 22.1 | 3.6 | 43.8 |
-| courtyard | 36.7 | 27.5 | 77.7 | 9.4 | 129.7 |
+**`courtyard` is where the learned front end falls apart, and it is not a fluke of one
+run.** Across three independent runs of the same `learned` configuration I measured
+516 mm, 849 mm and 1111 mm. The two SIFT configurations landed on 29 mm and 31 mm, and
+`colmap-shortlist` reproduced 29-30 mm in both the standalone and the mixed run. The
+learned front end is not merely less accurate on this scene, it is unstable run to run.
 
-`pipes` has 14 images, below `exhaustive_if_less=22`, so retrieval is skipped entirely.
+**`pipes` is where SIFT falls apart, and that one *is* an artefact — of resolution, not
+of SIFT.** At 1024 px SIFT registers 8 of 14 images. At full resolution it registers all
+14 with the best pose accuracy of any configuration in the table. Any conclusion of the
+form "the learned matcher wins on low-texture scenes" that is drawn from the
+`colmap-shortlist` row alone would be wrong; the `colmap-default` row is the control that
+catches it.
+
+Feature counts actually extracted, for reference: `colmap-shortlist` 1822-5542 keypoints
+per image, `colmap-default` 11393-12511.
 
 ---
 
-## 2. mixed3 — courtyard + terrace + pipes, 75 images
+## Mixed scenes: `courtyard` + `terrace` + `pipes`
 
-Shortlist 2508 pairs (of 2775 possible) in 92.5 s · detect 56.9 s · match 221.7 s ·
-1268 pairs kept · ransac 21.6 s · mapping 448.6 s.
+75 images shuffled into one folder. Correct output is **3** reconstructions.
 
-### Baseline
-
-Registered 75 / 75 in **2 clusters** (correct: 3). Purity **0.6933**.
-
-| Cluster | Composition | Size |
-|---|---|---|
-| 0 | courtyard 38 + terrace 23 | 61 |
-| 1 | pipes 14 | 14 |
-
-| Scene | AUC@5 / 10 / 20° | Median position | Median rotation |
-|---|---|---|---|
-| courtyard | 0.646 / 0.700 / 0.728 | 0.809 m | 4.383° |
-| pipes | 0.894 / 0.947 / 0.974 | 0.005 m | 0.252° |
-| terrace | 0.897 / 0.948 / 0.974 | 0.012 m | 0.406° |
-
-Note that `terrace` and `pipes` are barely affected — the merge damages the larger,
-weaker scene while leaving its partner's numbers intact. Registration counts alone would
-show nothing at all.
-
-### Where the merge comes from
-
-LightGlue pairs kept (≥20 matches), by scene pair:
-
-| | Pair | Count |
-|---|---|---|
-| WITHIN | courtyard \| courtyard | 661 |
-| **CROSS** | **courtyard \| terrace** | **296** |
-| WITHIN | terrace \| terrace | 210 |
-| WITHIN | pipes \| pipes | 71 |
-| CROSS | courtyard \| pipes | 19 |
-| CROSS | pipes \| terrace | 11 |
-
-After COLMAP geometric verification (1040 non-empty two-view geometries):
-
-| | Pair | Count | Share |
-|---|---|---|---|
-| WITHIN | courtyard \| courtyard | 643 | 61.8% |
-| WITHIN | terrace \| terrace | 183 | 17.6% |
-| **CROSS** | **courtyard \| terrace** | **147** | **14.1%** |
-| WITHIN | pipes \| pipes | 64 | 6.2% |
-| CROSS | courtyard \| pipes | 3 | 0.3% |
-
-The cross-scene links concentrate on a handful of images — `courtyard/DSC_0302–0305`
-against `terrace/DSC_0259, 0279, 0285` — with 64–83 inliers each.
-
-Inlier distributions:
-
-| | n | min | p10 | median | p90 | max |
+| | Registered | Clusters | Purity | Inlier ratio | Pair precision | Mapping |
 |---|---|---|---|---|---|---|
-| within-scene | 890 | 15 | 32 | 302 | 1421 | 3379 |
-| cross-scene | 150 | 15 | 16 | 22 | 54 | 83 |
+| learned | 75 / 75 | **2** | **0.6933** | 0.8396 | **0.8556** (889 / 1039) | 543.8 s |
+| colmap-shortlist | 69 / 75 | **3** ✓ | **1.0000** | 0.8532 | **1.0000** (559 / 559) | 71.0 s |
+| colmap-default | 75 / 75 | **3** ✓ | **1.0000** | 0.8946 | **1.0000** (614 / 614) | 199.7 s |
 
-Threshold sweep:
+Per-scene accuracy inside the mixed run:
 
-| Threshold | Within kept | Cross kept | Contamination |
+| Scene | learned | colmap-shortlist | colmap-default |
 |---|---|---|---|
-| 20 | 860 | 94 | 9.9% |
-| 40 | 777 | 31 | 3.8% |
-| 60 | 718 | 10 | 1.4% |
-| **84** | **676** | **0** | **0.0%** |
-| 100 | 652 | 0 | 0.0% |
-| 200 | 532 | 0 | 0.0% |
+| `courtyard` | 0.678 / 849 mm | 0.906 / 30 mm | 0.898 / 34 mm |
+| `terrace` | 0.101 / 2246 mm, **8 cameras >170° off** | 0.928 / 8 mm | 0.933 / 7 mm |
+| `pipes` | 0.861 / 8 mm | 0.209 / 32 mm (57% registered) | **0.927 / 5 mm** |
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="figures/inlier-histogram-dark.svg">
-  <img alt="Histogram of RANSAC inliers per verified image pair. Cross-scene pairs are confined below 83 inliers; within-scene pairs spread to 3379." src="figures/inlier-histogram-light.svg">
-</picture>
+`courtyard` and `terrace` merged into a single reconstruction under `learned`, and
+`terrace` was wrecked in the process: 8 of its 23 cameras ended up pointing more than
+170° from their true orientation, while the camera positions still looked plausible.
 
-Log-spaced bins. Cross-scene pairs peak at 15–22 inliers and stop entirely at 83;
-within-scene pairs have a median of 302 and reach 3379. Nothing above 100 inliers is a
-cross-scene pair.
+**The merge is a property of the learned matcher, not of feature density.** This is the
+claim `colmap-default` exists to test. It extracts 11928 keypoints per image -- 2.6x the
+budget the learned configuration gets, at three times the resolution -- and still
+produced **zero** cross-scene verified pairs. More features did not manufacture false
+links. LightGlue did: 296 cross-scene pairs cleared its match threshold and 150 survived
+COLMAP's geometric verification.
 
-### Ablation: drop verified geometries below 100 inliers
+Where the learned front end's false links sit, against the true ones:
 
-388 of 1040 geometries dropped. Mapping 172.0 s (from 448.6 s).
+| Link type | n | min | p10 | median | p90 | max |
+|---|---|---|---|---|---|---|
+| within-scene | 889 | 15 | 33 | 308 | 1419 | 3376 |
+| cross-scene (false) | 150 | 15 | 16 | 22 | 54 | 85 |
 
-Registered 75 / 75 in **3 clusters**, one per scene. Purity **1.0000**.
-
-| Scene | AUC@5° | AUC@10° | AUC@20° | Median position | Median rotation |
-|---|---|---|---|---|---|
-| courtyard | 0.646 → **0.779** | 0.700 → 0.837 | 0.728 → 0.867 | 0.809 → **0.378 m** | 4.383 → **1.775°** |
-| terrace | 0.897 → 0.893 | 0.948 → 0.947 | 0.974 → 0.973 | 0.012 → 0.015 m | 0.406 → 0.435° |
-| pipes | 0.894 → 0.897 | 0.947 → 0.948 | 0.974 → 0.974 | 0.005 → 0.004 m | 0.252 → 0.319° |
-
-The filtered `courtyard` (0.378 m) beats its own standalone run (0.516 m).
+Cross-scene pairs kept by LightGlue, by scene pair: `courtyard`|`terrace` **296**,
+`courtyard`|`pipes` 19, `pipes`|`terrace` 11. The confusion is overwhelmingly between the
+two scenes that actually look alike -- both sit on the ETH Zürich campus and share
+facade, railing and paving texture.
 
 ---
 
-## 3. revisit — relief + relief_2, 62 images
+## Revisit: `relief` + `relief_2`
 
-`relief` and `relief_2` are the **same physical interior**, photographed in two sessions.
-Correct output is **one** cluster. DINOv2 cannot separate the sets: cross-session L2
-descriptor distance median 0.305, against 0.308 within `relief` and 0.295 within
-`relief_2`.
+31 + 31 images of the *same* interior, photographed in two sessions. Correct output is
+**1** reconstruction. Ground truth for the two sessions lives in two independent
+coordinate frames, so only within-session pose error is meaningful.
 
-Shortlist 1860 pairs (of 1891) in 61.3 s · detect 44.3 s · match 115.6 s · 905 pairs kept ·
-ransac 25.6 s · mapping 131.9 s.
+**The sign of `pair precision` is inverted here.** A cross-session pair is a *true* link,
+so a lower "precision" in this table is not a defect -- it is the metric counting correct
+behaviour as error. The column that matters is cluster count.
 
-### Baseline
-
-Registered 62 / 62 in **2 clusters** (correct: 1). Purity **0.5323**.
-
-| Cluster | Composition | Size |
-|---|---|---|
-| 0 | relief 13 + relief_2 11 | 24 |
-| 1 | relief 18 + relief_2 20 | 38 |
-
-**The split is not by session.** Both clusters contain both sessions; cross-session
-linking worked (427 pairs kept, 370 verified). The reconstruction fragmented spatially
-instead.
-
-| Scene | AUC@5 / 10 / 20° | Median position | Median rotation | In dominant cluster |
+| | Registered | Clusters | Inlier ratio | Mapping |
 |---|---|---|---|---|
-| relief | 0.423 / 0.460 / 0.478 | 0.016 m | 0.561° | 58% |
-| relief_2 | 0.339 / 0.352 / 0.359 | 0.354 m | 1.248° | 65% |
+| learned | 62 / 62 | **2** | 0.7154 | 147.5 s |
+| colmap-shortlist | 62 / 62 | **1** ✓ | **0.9053** | 116.0 s |
 
-### The link populations
+| Scene | learned | colmap-shortlist |
+|---|---|---|
+| `relief` | 0.449, 58% in dominant reconstruction | **0.674, 100%**, 132 mm, 1.419° |
+| `relief_2` | 0.289, **179.037°**, **20 of 20 cameras >170° off** | **0.899, 8 mm, 0.337°** |
 
-| | n | min | p10 | median | p90 | max |
-|---|---|---|---|---|---|---|
-| same-session | 410 | — | — | 460 | — | — |
-| **cross-session (true)** | **370** | 15 | 18 | **51** | 225 | 860 |
+The learned front end split one place into two reconstructions and then inverted one of
+them: after Sim(3) alignment every camera in the `relief_2` model points backwards, while
+the positions still fit to about a metre. SIFT fused the two sessions into one model, as
+it should, and reconstructed `relief_2` to 8 mm.
 
-Survival under a threshold:
-
-| Threshold | Cross-session links surviving |
-|---|---|
-| 20 | 321 / 370 |
-| 50 | 190 / 370 |
-| **100** | **73 / 370** |
-| 150 | 55 / 370 |
-| 200 | 46 / 370 |
-
-### Ablation: the same 100-inlier filter
-
-431 of 780 geometries dropped. Mapping 131.8 s. Still 2 clusters, purity 0.5323.
-
-| Scene | AUC@5° | Median position | Median rotation |
-|---|---|---|---|
-| relief | 0.423 → 0.441 | 0.016 → 0.010 m | 0.561 → 0.499° |
-| relief_2 | 0.339 → **0.290** | 0.354 → 0.949 m | 1.248 → **178.537°** |
-
-**The `relief_2` reconstruction collapsed.** After Sim(3) alignment:
-
-| | min | p25 | median | p75 | max | cameras > 170° |
-|---|---|---|---|---|---|---|
-| baseline | 0.84° | 1.09° | 1.25° | 45.52° | 178.30° | **5 / 20** |
-| + filter | 178.42° | 178.52° | **178.54°** | 179.85° | 179.86° | **20 / 20** |
-
-Every camera in the filtered model points roughly backwards. The alignment is a proper
-rotation (`det = +1.000`), so this is the reconstruction, not the comparison. Camera
-positions still fit to within a metre, which is why the model looks plausible until
-orientation is checked.
-
-### The overlap that makes a global threshold impossible
-
-| Link type | Should be | n | p10 | median | max |
-|---|---|---|---|---|---|
-| within-scene | kept | 890 | 32 | 302 | 3379 |
-| cross-session (revisit) | **kept** | 370 | 18 | **51** | 860 |
-| cross-scene | **dropped** | 150 | 16 | **22** | 83 |
-
-A threshold removing all 150 false cross-scene links (84) removes 80% of the 370 true
-cross-session links.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="figures/link-ranges-dark.svg">
-  <img alt="Inlier ranges for four kinds of image-pair link on a log scale. True within-scene links have a median of 302 and true cross-session revisit links a median of 51. False cross-scene links between lookalike places have a median of 22 and reach 83, overlapping the true revisit population. False cross-site links between visually unlike aerial sites have a median of 16 and never exceed 37." src="figures/link-ranges-light.svg">
-</picture>
-
-Bar spans the 10th–90th percentile, whisker spans min–max, dot marks the median. The two
-populations a filter has to separate — *cross-scene* and *cross-session* — overlap across
-most of the orange range. The bottom row is the aerial case, where the false links are so
-weak that RANSAC removes them unaided.
+Its cross-session links were weak but numerous under `learned` -- n=370, median 51,
+against within-session n=412, median 452 -- and evidently not strong enough for the
+mapper to fuse the sessions.
 
 ---
 
-## 4. Mill 19 — real UAV imagery
+## What the two mixed experiments say together
 
-4608 × 3456 frames from two Pittsburgh industrial sites. No ground-truth poses were
-obtainable (the pose metadata sits at the tail of an 11 GB archive the host stopped
-serving mid-study), so these runs report registration and clustering only.
-
-### 4a. Validation split — unusable, and it looks like a result
-
-20 `building` frames sampled roughly every 97th frame of a ~1900-image flight.
-
-Shortlist 190 (exhaustive) · detect 11.4 s · match 24.4 s · **67 pairs kept (35%)** ·
-ransac 1.4 s · mapping 62.8 s · registered **13 / 20** in **3 clusters** (5 / 3 / 5).
-
-The fragmentation is missing overlap, not scene confusion. An earlier check on this split
-did confirm the pose-handling code: within its largest reconstruction, rotation error
-against the PixSfM reference had a median of 0.47° and translation direction 0.74°.
-
-### 4b. Single site, consecutive frames
-
-120 consecutive `building` frames streamed from the 11 GB archive.
-
-Shortlist 6283 (of 7140) in 68.8 s · detect 51.1 s · match 768.3 s · **3538 pairs kept
-(56%)** · ransac 159.5 s · mapping 2263.5 s · registered **120 / 120** in **1 cluster**.
-
-### 4c. Mixed sites — clean separation, no filter
-
-251 frames (`building` 120 + `rubble` 131).
-
-Shortlist **16580 of 31375 (53%)** in 143.6 s · detect 108.8 s · match 2031.5 s ·
-**7742 pairs kept** · ransac 265.7 s.
-
-Registered **234 / 251** in **2 clusters**, purity **1.0000**:
-
-| Cluster | Composition |
-|---|---|
-| 0 | rubble 131 / 131 |
-| 1 | building 103 / 120 |
-
-LightGlue pairs kept, by site pair:
-
-| | Pair | Count | Share |
+| Situation | Correct answer | learned | SIFT + NN |
 |---|---|---|---|
-| WITHIN | building \| building | 3530 | 45.6% |
-| WITHIN | rubble \| rubble | 3305 | 42.7% |
-| CROSS | building \| rubble | 907 | 11.7% |
+| three different scenes in one folder | 3 clusters | **2** — welds two different places together | 3 ✓ |
+| one place photographed twice | 1 cluster | **2** — splits one place in half | 1 ✓ |
 
-After geometric verification:
-
-| | n | min | p10 | median | p90 | max | ≥100 inliers |
-|---|---|---|---|---|---|---|---|
-| within-site | 5623 | 15 | 26 | 412 | 2025 | 3706 | many |
-| **cross-site** | **195** | 15 | 15 | **16** | 19 | **37** | **0** |
-
-Cross-site links are 3.4% of verified geometries and sit at the floor RANSAC accepts.
-Compare `courtyard`↔`terrace`, whose false links reached 83 inliers and merged two
-scenes. The merge failure requires two distinct places that genuinely look alike; when
-they do not, geometric verification removes the cross-links unaided.
+The learned front end is wrong in both directions on this data: it merges what should be
+separate and separates what should be merged. SIFT with nearest-neighbour matching gets
+both right, at 1/2.6 of the feature budget and 1/6 of the input resolution.
 
 ---
 
-## 5. Retrieval retention across all runs
+## Front-end timings (not comparable — CPU vs GPU)
 
-| Run | Images | Shortlisted | All possible | Retained | DINOv2 cost |
-|---|---|---|---|---|---|
-| revisit | 62 | 1860 | 1891 | 98% | 61 s |
-| mixed3 | 75 | 2508 | 2775 | 90% | 93 s |
-| uav building | 120 | 6283 | 7140 | 88% | 69 s |
-| uav mixed | 251 | 16580 | 31375 | 53% | 144 s |
+Listed only so the logs can be traced. See the caveat above.
 
-`min_pairs=58` — not `sim_th=0.3` — is what sets the shortlist at every size below ~250
-images.
+| Run | Config | Retrieval | Detect | Match | Verify | Total |
+|---|---|---|---|---|---|---|
+| mixed3 | learned | 108.5 s | 78.0 s | 213.4 s | 20.2 s | 963.8 s |
+| mixed3 | colmap-shortlist | 72.1 s | 183.9 s | 149.9 s | (in match) | 476.9 s |
+| mixed3 | colmap-default | — (exhaustive) | 1522.7 s | 692.3 s | (in match) | 2414.7 s |
+| revisit | learned | 66.8 s | 44.9 s | 109.3 s | 24.8 s | 393.2 s |
+| revisit | colmap-shortlist | 60.6 s | 145.1 s | 64.1 s | (in match) | 385.8 s |
+
+## Retrieval: the parameter that only starts working at scale
+
+`min_pairs=58` forces every image to keep its 58 nearest DINOv2 neighbours. On these
+collection sizes that floor, not the `sim_th` similarity test, decides the shortlist:
+
+| Run | Images | Shortlisted | All possible | Retained |
+|---|---|---|---|---|
+| revisit | 62 | 1860 | 1891 | **98%** |
+| mixed3 | 75 | 2508 | 2775 | **90%** |
+
+At 62 images the retrieval stage spends a minute of GPU time to discard 31 pairs out of
+1891. Retrieval earns its cost from collection size, not from this parameter: at 12000
+images an exhaustive pairing is 72 million pairs, and no threshold choice changes the
+fact that shortlisting is what makes the problem finite.

@@ -15,8 +15,9 @@ torch        2.11.0+cu128
 lightglue    from git+https://github.com/cvg/LightGlue.git
 ```
 
-Four API changes then stop the code. Each one below is what actually failed, and what it
-was replaced with.
+Four API changes then stop the code (sections 1-4). Each one below is what actually
+failed, and what it was replaced with. Sections 5 and 6 do not stop anything -- they are
+two properties of the current wheel that quietly change what a benchmark means.
 
 ---
 
@@ -114,6 +115,56 @@ def load_torch_image(fname, device=torch.device('cpu')):
 
 Separately, `import kornia` no longer pulls in `kornia.utils`, so
 `K.utils.get_cuda_device_if_available(0)` raises `AttributeError`. Use torch directly.
+
+---
+
+## 5. The PyPI `pycolmap` wheel has no CUDA
+
+```python
+>>> pycolmap.has_cuda
+False
+```
+
+Every published wheel I could install is built without CUDA, and nothing warns about it.
+`FeatureExtractionOptions.use_gpu = True` is accepted, stored, and then silently ignored;
+the log line that gives it away is buried in COLMAP's glog output:
+
+```
+sift.cc:765] Creating SIFT CPU feature extractor
+```
+
+Two consequences worth stating before anyone quotes a timing from this repository:
+
+- SIFT detection and nearest-neighbour matching run on the CPU. On a Colab T4 instance
+  (2 vCPU) that is roughly 20 s per 6200x4100 image, so extraction alone on 75 images is
+  about 25 minutes.
+- The learned front end is unaffected -- ALIKED and LightGlue go through torch, which has
+  its own CUDA. So **any end-to-end timing that compares the two front ends is comparing a
+  GPU against a CPU and means nothing.** Only `incremental_mapping` is comparable: COLMAP
+  maps on the CPU either way, and both configurations reach it through the identical call.
+
+Also note `use_gpu` defaults to `False` in the Python bindings and `True` in the COLMAP
+command line, so a pycolmap script silently runs a different configuration from the CLI
+command it was transcribed from.
+
+---
+
+## 6. pycolmap 4.2 ships ALIKED and LightGlue itself
+
+```python
+>>> [t for t in dir(pycolmap.FeatureExtractorType) if not t.startswith('_')]
+['ALIKED_N16ROT', 'ALIKED_N32', 'LOMA_B', 'LOMA_B128', 'SIFT', 'UNDEFINED', ...]
+>>> [t for t in dir(pycolmap.FeatureMatcherType) if not t.startswith('_')]
+['ALIKED_BRUTEFORCE', 'ALIKED_LIGHTGLUE', ..., 'SIFT_BRUTEFORCE', 'SIFT_LIGHTGLUE', ...]
+```
+
+The enums accept these values. If they work end to end, the HDF5 detour this pipeline
+takes -- write keypoints and matches to HDF5, then hand-build the COLMAP database -- is
+no longer necessary, and the rig/frame problem in section 1 disappears with it, because
+COLMAP's own importer creates rigs and frames. I did not test the native path here: this
+study needed the hand-built database anyway, since the whole point was to measure the two
+front ends through one identical downstream. Anyone porting this pipeline forward again
+should check the native path first.
 
 ---
 
