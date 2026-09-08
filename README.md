@@ -218,6 +218,11 @@ torch 2.11.0+cu128, pycolmap 4.2.0, kornia 0.8.3, transformers 5.16.1.
   how either front end behaves across a 12000-image survey.
 - Mill 19 has no metric scale factor, so its position errors are ratios, not distances.
 
+## License
+
+MIT — see [`LICENSE`](LICENSE). The datasets are not mine and carry their own terms; see
+below.
+
 ## Data and credits
 
 - **ETH3D** high-resolution multi-view — <https://www.eth3d.net/datasets>
