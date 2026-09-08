@@ -61,8 +61,8 @@ EXPERIMENTS = {
     'revisit':   dict(scenes=['relief', 'relief_2'], expect_clusters=1, same_place=True),
     # Mill 19 aerial. Consecutive frames from the TRAIN split -- see uav_dataset.py for
     # why the published val split cannot be used for Structure-from-Motion.
-    'uav_building': dict(uav=['building'], n_per_site=120, expect_clusters=1),
-    'uav_mixed':    dict(uav=['building', 'rubble'], n_per_site=120, expect_clusters=2),
+    'uav_building': dict(uav=['building'], n_per_site=120, expect_clusters=1, units='u'),
+    'uav_mixed':    dict(uav=['building', 'rubble'], n_per_site=120, expect_clusters=2, units='u'),
 }
 
 
@@ -403,8 +403,12 @@ def main():
     for s in sorted(set(labels.values())):
         m = eval_scene(r['preds'], r['clusters'], gt, labels, s)
         a = m['auc']
+        # ETH3D ground truth is metrically scaled from laser scans, so 'm' is real
+        # metres there. Mill 19 ships no scale factor, so 'u' marks Mega-NeRF's
+        # normalised units -- comparable within a run, not across datasets.
+        unit = cfg.get('units', 'm')
         line = (f'  {s:<12s} AUC@5/10/20 = {a[0]:.3f} / {a[1]:.3f} / {a[2]:.3f}'
-                f'   | abs {m["abs_pos"]:.3f} m, {m["abs_rot"]:.3f} deg'
+                f'   | abs {m["abs_pos"]:.3f} {unit}, {m["abs_rot"]:.3f} deg'
                 f'  ({m["frac"]*100:.0f}% in dominant reconstruction)')
         if m['flipped']:
             line += f'  [{m["flipped"]} cameras >170 deg off -- degenerate]'

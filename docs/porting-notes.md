@@ -16,8 +16,8 @@ lightglue    from git+https://github.com/cvg/LightGlue.git
 ```
 
 Four API changes then stop the code (sections 1-4). Each one below is what actually
-failed, and what it was replaced with. Sections 5 and 6 do not stop anything -- they are
-two properties of the current wheel that quietly change what a benchmark means.
+failed, and what it was replaced with. Sections 5 to 7 do not stop anything -- they are
+three properties of the current wheel that quietly change what a benchmark means.
 
 ---
 
@@ -165,6 +165,39 @@ COLMAP's own importer creates rigs and frames. I did not test the native path he
 study needed the hand-built database anyway, since the whole point was to measure the two
 front ends through one identical downstream. Anyone porting this pipeline forward again
 should check the native path first.
+
+---
+
+## 7. `max_num_features` is a knob, not a keypoint count
+
+Setting `extraction_options.sift.max_num_features = 4600` and then reading the database
+back gives **7592 keypoints per image**, not 4600. My first reading of that was that the
+nested assignment silently failed. It does not -- I measured it on three Mill 19 frames at
+`max_image_size = 1024`, varying one thing at a time:
+
+| configured cap | `max_num_orientations` | keypoints / image | ratio |
+|---|---|---|---|
+| 500 | 1 | 580 | 1.16 |
+| 4600 | 1 | 6646 | 1.44 |
+| 4600 | 2 (default) | 7964 | 1.73 |
+| 8192 (default) | 2 | 12644 | 1.54 |
+
+The cap is honoured and monotonic -- 500 in, 580 out -- but what lands in the database
+systematically exceeds it, by a factor that grows with the cap. Part of that is
+`max_num_orientations = 2`: a feature with two dominant orientations is written as two
+keypoint rows sharing one location. Turning it off takes 1.73x down to 1.44x, so the rest
+comes from how the cap is applied across the scale-space pyramid, not from orientations.
+
+Setting the value three different ways -- direct nested assignment, read-modify-write, and
+assigning a freshly constructed `SiftExtractionOptions` -- gives byte-identical results, so
+there is no pybind copy-semantics trap here.
+
+**Why it matters for a comparison.** "Both front ends at 4600 features" is a statement
+about configuration, not about what the matcher actually sees. ALIKED's 4600 is exact;
+SIFT's 4600 became 7592. Any study that matches the two by the config value is handing the
+SIFT arm roughly 65% more keypoints. To match realized counts, extract once, read
+`Database.num_keypoints()`, and solve for the cap -- or set `max_num_orientations = 1` and
+scale the cap by the measured 1.44x.
 
 ---
 

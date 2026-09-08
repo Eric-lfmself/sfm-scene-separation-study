@@ -12,13 +12,18 @@ feature database is the *same code path* for all three: the same
 
 | | pair selection | detector | matcher | budget |
 |---|---|---|---|---|
-| `learned` | DINOv2 shortlist | ALIKED | LightGlue | 4600 features, 1024 px |
-| `colmap-shortlist` | DINOv2 shortlist | SIFT | nearest neighbour + ratio test | 4600 features, 1024 px |
-| `colmap-default` | exhaustive | SIFT | nearest neighbour + ratio test | COLMAP stock: 8192 features, 3200 px |
+| `learned` | DINOv2 shortlist | ALIKED | LightGlue | cap 4600 (realized 4600), 1024 px |
+| `colmap-shortlist` | DINOv2 shortlist | SIFT | nearest neighbour + ratio test | cap 4600 (realized ~7592), 1024 px |
+| `colmap-default` | exhaustive | SIFT | nearest neighbour + ratio test | stock cap 8192 (realized ~11988), 3200 px |
 
 `learned` and `colmap-shortlist` see **the identical set of image pairs** at **the
-identical feature budget and input resolution**. The only difference between them is the
-detector and the matcher. `colmap-default` is COLMAP as shipped, and is included because
+identical input resolution**, configured to the same feature cap. The only difference
+between them is the detector and the matcher.
+
+The feature cap is a configuration value, not a keypoint count. ALIKED's 4600 is exact;
+COLMAP writes 7592 per image when asked for 4600, so the SIFT arm carries roughly 65% more
+keypoints than the learned arm. That bias favours the configuration that wins below, and
+is stated here rather than buried. Measured behaviour in `docs/porting-notes.md` §7. `colmap-default` is COLMAP as shipped, and is included because
 that is what a pipeline like this is usually being compared against.
 
 ## A timing caveat that has to come first
@@ -81,8 +86,10 @@ form "the learned matcher wins on low-texture scenes" that is drawn from the
 `colmap-shortlist` row alone would be wrong; the `colmap-default` row is the control that
 catches it.
 
-Feature counts actually extracted, for reference: `colmap-shortlist` 1822-5542 keypoints
-per image, `colmap-default` 11393-12511.
+Keypoints actually written to the database, for reference: `colmap-shortlist` 1822-5542
+per image, `colmap-default` 11393-12511. On `mixed3` the SIFT arm realized 4247 per image,
+**fewer** than ALIKED's 4600 -- so on the experiment the merge result rests on, the feature
+advantage runs the other way.
 
 ---
 
@@ -109,8 +116,8 @@ Per-scene accuracy inside the mixed run:
 170° from their true orientation, while the camera positions still looked plausible.
 
 **The merge is a property of the learned matcher, not of feature density.** This is the
-claim `colmap-default` exists to test. It extracts 11928 keypoints per image -- 2.6x the
-budget the learned configuration gets, at three times the resolution -- and still
+claim `colmap-default` exists to test. It writes 11928 keypoints per image -- 2.6x what
+the learned configuration gets, at three times the resolution -- and still
 produced **zero** cross-scene verified pairs. More features did not manufacture false
 links. LightGlue did: 296 cross-scene pairs cleared its match threshold and 150 survived
 COLMAP's geometric verification.
@@ -169,7 +176,76 @@ mapper to fuse the sessions.
 
 The learned front end is wrong in both directions on this data: it merges what should be
 separate and separates what should be merged. SIFT with nearest-neighbour matching gets
-both right, at 1/2.6 of the feature budget and 1/6 of the input resolution.
+both right, at 1/6 of the input resolution the stock configuration uses.
+
+---
+
+## Aerial: Mill 19, 120 consecutive frames with ground truth
+
+Everything above is ground-level handheld DSLR. This section is the one that tests whether
+any of it transfers to the survey geometry the pipeline is actually meant for: 120
+consecutive frames from the `building` site of Mill 19, flown at constant altitude, 4608 x
+3456 per frame. The window spans two flight strips -- the optical axis swings ~89 degrees
+at frames 55 and 113, where the aircraft turns around -- so it contains both within-strip
+overlap and across-strip viewpoint change.
+
+**On units.** Mill 19 ships no scale factor (there is no `coordinates.pt`, only a
+`mappings.txt` that does not load as a plain torch file), so positions are in Mega-NeRF's
+normalised frame, marked `u`. To make them readable: the median baseline between
+consecutive frames is **0.041 u**, so an error of 0.001 u is 1/41 of one inter-frame
+baseline and 0.098 u is 2.4 baselines. These are not metres and cannot be compared with
+the ETH3D millimetres above.
+
+**On pair precision.** Single site, so every pair is same-scene by construction and the
+column is identically 1.0000 in all three rows. It carries no information here and is
+omitted.
+
+**Verifying the poses before trusting any of this.** A wrong axis convention is the kind
+of error that leaves camera positions plausible and only the orientations wrong -- exactly
+the failure mode this study keeps finding -- so `--check-poses` tests the conversion
+independently of the pipeline: rotations orthonormal to 2.3e-07, median turn between
+consecutive optical axes 0.26 degrees, and the only large turns at the three strip
+reversals. A wrong convention would show up as large turns everywhere, not at three
+regularly spaced frames.
+
+| | Registered | Clusters | AUC@5 / 10 / 20° | Median position | Median rotation | Mapping | Inlier ratio |
+|---|---|---|---|---|---|---|---|
+| learned | 120 / 120 | 1 ✓ | 0.593 / 0.621 / 0.634 | **0.098 u** (2.4 baselines) | **64.33°**, 27 cameras >170° off | 2211.5 s | 0.7655 |
+| colmap-shortlist | 120 / 120 | 1 ✓ | **0.947 / 0.974 / 0.987** | **0.001 u** (1/41 baseline) | **0.94°**, none | **911.6 s** | 0.9311 |
+| colmap-default | 120 / 120 | 1 ✓ | **0.953 / 0.977 / 0.988** | **0.001 u** | **0.52°**, none | 1517.7 s | **0.9412** |
+
+Front-end stages, for tracing only -- CPU against GPU, not comparable: learned shortlist
+70.4 s, ALIKED 52.1 s, LightGlue 761.4 s, verification 106.2 s; colmap-shortlist SIFT
+309.1 s (7592 keypoints/image), matching 736.3 s; colmap-default SIFT 2292.4 s (11988
+keypoints/image), matching 1671.7 s.
+
+**Every configuration registers all 120 frames into one reconstruction.** By the two
+metrics that do not need ground truth -- completeness and cluster count -- all three
+succeed identically, and a study that stopped there would report a tie.
+
+**The ground truth says otherwise.** The learned front end's reconstruction is wrong: a
+median rotation error of 64 degrees, with 27 of its 120 cameras pointing more than 170
+degrees from their true orientation, and camera centres off by more than two inter-frame
+baselines. Both SIFT configurations land within a degree, with position errors two orders
+of magnitude smaller.
+
+This is the same silent failure as `relief_2` on ETH3D, at larger scale: the model is
+complete, the clustering is correct, the positions are plausible enough to pass a glance,
+and a quarter of the cameras face backwards.
+
+**The control that makes this readable.** A 64-degree median could equally well mean my
+ground truth handling is broken. It does not, and the reason is that `colmap-shortlist`
+ran against **the same poses, the same evaluation code, the same alignment and the same
+mapper** and returned 0.94 degrees. The evaluation is sound; the reconstruction is not.
+
+**One bias to declare.** The SIFT arm carried 7592 keypoints per image against the learned
+arm's 4600, for the reason in `docs/porting-notes.md` §7 -- 65% more, favouring the side
+that wins. It is not a plausible explanation for a 100x position-error gap or for 27
+inverted cameras, but it is real and it is not hidden in a footnote.
+
+**Mapping cost.** 2211.5 s against 911.6 s, on the same CPU through the same call. The
+learned front end handed the mapper 3367 verified pairs to the SIFT arm's 2388; at 12000
+images that ratio, not the choice of matcher, is what sets reconstruction time.
 
 ---
 
