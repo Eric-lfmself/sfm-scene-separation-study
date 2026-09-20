@@ -135,9 +135,6 @@ docs/                Method, reproduction, audit, and research roadmap
 
 </details>
 
-## Scope and next steps
-
-I have not yet established performance on a 12,000-image survey, repeated the full comparison across seeds/sites, or evaluated a classical-first fallback design. I will use fresh, archived runs to test these questions. The current findings are specific to the recorded configurations and datasets. [Research roadmap →](docs/ROADMAP.md)
 
 ## Acknowledgements and rights
 
