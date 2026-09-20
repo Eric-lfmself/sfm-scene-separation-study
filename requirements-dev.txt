@@ -1,0 +1,3 @@
+# Lightweight validation and figure generation; no model downloads or GPU stack.
+numpy>=1.26,<3
+matplotlib>=3.8,<4

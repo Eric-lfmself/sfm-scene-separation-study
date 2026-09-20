@@ -1,0 +1,36 @@
+{
+  "name": "method-visual",
+  "description": "Original illustrative graphical abstract, not an experimental reconstruction. Three perspective images of a deterministic L-shaped courtyard lead to schematic descriptors and a similarity matrix, a verified image graph, and sparse 3D points with camera frusta. Three colored imaging rays meet at a shared facade landmark. Three compact comparison arms join before COLMAP geometry and the shared incremental mapper. Lower panels zoom into projected landmark correspondences and the same synthetic architecture reconstructed as an illustrative point cloud. All displayed image geometry, descriptor values and graph links are explanatory examples, not measured results.",
+  "files": [
+    "method-visual.svg",
+    "method-visual.png"
+  ],
+  "width_inches": 14,
+  "height_inches": 12,
+  "png_dpi": 180,
+  "background": "#FFFFFF",
+  "svg_text": "editable, fonts not embedded",
+  "svg_font_fallback": [
+    "DejaVu Sans",
+    "Arial",
+    "Helvetica",
+    "sans-serif"
+  ],
+  "png_font": "DejaVu Sans (rendered by Matplotlib)",
+  "sources": [],
+  "transformations": [
+    "Hand-built L-shaped courtyard mesh in a shared synthetic 3D coordinate system.",
+    "Perspective projection from three explicitly defined cameras, with projected landmark correspondences.",
+    "Deterministic point sampling on the same mesh; seed 20260920. Three camera rays converge on the same synthetic facade landmark.",
+    "Illustrative descriptors, similarity matrix and graph links; no empirical quantities."
+  ],
+  "evidence_status": "schematic",
+  "uncertainty": "Not applicable; no experimental observations are plotted.",
+  "geometry_seed": 20260920,
+  "geometry_method": "pinhole perspective projection of original parametric courtyard mesh; seeded uniform surface samples",
+  "generator": "tools/make_method_visual.py",
+  "generator_sha256": "8c5e60490c556d7e4469829b9e967e545c2a3f03f71276668ed87dc03e6f88e8",
+  "python": "3.12.14",
+  "matplotlib": "3.10.8",
+  "numpy": "2.5.3"
+}

@@ -1,232 +1,146 @@
-# Does the learned matching front end actually help?
+<div align="center">
 
-A Structure-from-Motion pipeline built on **DINOv2 retrieval → ALIKED → LightGlue →
-COLMAP**, ported forward to current library versions, and then measured against the front
-end COLMAP already ships — **SIFT with nearest-neighbour matching** — on identical inputs,
-identical image pairs, an identical feature cap, and an identical mapper.
+# SfM Scene Separation Study
 
-I expected to be documenting how the learned front end fails in one specific way. What I
-measured is that on this data it does not beat the classical one at all — on ground-level
-scenes or on real UAV survey frames — and that the failure I set out to document is caused
-by the learned matcher rather than being a property of the pipeline.
+### Matching, scene identity, and camera geometry<br>in learned and classical Structure-from-Motion
 
-All numbers, all timings and the raw per-run breakdown are in [`RESULTS.md`](RESULTS.md).
+**Bowen Liu · Individual experiment · Work in progress**
 
----
+[Method](docs/METHOD.md) · [Results](RESULTS.md) · [Quick start](#quick-start) · [Experiments](docs/EXPERIMENTS.md) · [Roadmap](docs/ROADMAP.md)
 
-## What is held identical
+**A complete reconstruction can still have the wrong geometry.**
 
-| | pair selection | detector | matcher | budget |
-|---|---|---|---|---|
-| `learned` | DINOv2 shortlist | ALIKED | LightGlue | cap 4600 (realized 4600), 1024 px |
-| `colmap-shortlist` | DINOv2 shortlist | SIFT | nearest neighbour | cap 4600 (realized ~7592), 1024 px |
-| `colmap-default` | exhaustive | SIFT | nearest neighbour | stock cap 8192 (realized ~11988), 3200 px |
+</div>
 
-`learned` and `colmap-shortlist` see **the same image pairs at the same input resolution**,
-configured to the same feature cap; the only difference is the detector and the matcher.
-`colmap-default` is COLMAP as shipped. Everything downstream of the feature database —
-the mapper call, its options, every metric — is one shared code path.
+I independently study how feature matching affects **which images reconstruct together** and **whether their camera poses are correct**. In this individual experiment, I compare a DINOv2 → ALIKED → LightGlue front end with two SIFT + nearest-neighbour baselines, using a shared COLMAP mapping and evaluation path.
 
-One caveat on that word "budget", because it cuts against my own conclusion: a cap of 4600
-means exactly 4600 keypoints for ALIKED, but COLMAP writes more than it is asked for —
-7592 per image here. The SIFT arm therefore ran with about 65% more keypoints than the
-learned arm, an advantage to the side that wins below. Measured behaviour and the reason
-are in [`docs/porting-notes.md`](docs/porting-notes.md) §7.
+My recorded experiments cover individual ETH3D scenes, a mixture of different places, repeated visits to one place, and a 120-frame Mill 19 aerial sequence. They motivate a practical question: what does registration rate miss?
 
-Two views of pose accuracy are reported throughout: **AUC@5/10/20°** of the relative-pose
-error, the convention in the feature-matching literature; and **Sim(3)-aligned absolute
-error**, the Structure-from-Motion convention. ETH3D ground truth is metrically scaled
-from laser scans, so the position figures are real millimetres.
+> **Current status.** This is an ongoing study. The figures and tables summarize my previously recorded results; I have not rerun the GPU experiments in this revision. The original per-run logs and reconstruction files are not available in this checkout. I document that evidence gap and the changes required for fresh runs in [the audit](docs/AUDIT.md).
 
----
+<p align="center">
+  <img src="figures/method-visual.png" alt="Perspective views of one illustrated courtyard lead to descriptors, candidate image pairs, verified correspondences, and a sparse architectural point cloud with cameras. Enlarged panels explain matching and reconstruction. All geometry is schematic." width="1100">
+</p>
 
-## Result 1 — on single scenes the classical front end is better, and steadier
+*I use original illustrative geometry to show what changes between views and what matching must recover. [Full-size figure and editable source](figures/README.md#illustrated-method-from-image-collections-to-3d-scene-structure). The comparison shares a mapper, but changes several front-end components; it does not isolate LightGlue as the cause of a failure.*
 
-| Scene | learned | SIFT @ matched res | SIFT @ stock |
-|---|---|---|---|
-| `pipes` (14) | 14/14 · 0.890 · 6 mm | 8/14 · 0.241 | **14/14 · 0.928 · 5 mm** |
-| `terrace` (23) | 23/23 · 0.893 · 16 mm | 23/23 · 0.931 · 7 mm | **23/23 · 0.932 · 7 mm** |
-| `courtyard` (38) | 38/38 · 0.643 · **1111 mm** | 38/38 · 0.891 · **29 mm** | **38/38 · 0.899 · 31 mm** |
+## Three questions
 
-*(registered · AUC@5° · median camera-centre error)*
+| Scene separation | Revisit fusion | Camera geometry |
+| :--- | :--- | :--- |
+| Do images from different places stay in separate reconstructions? | Do two visits to the same place join into one reconstruction? | Do camera positions and orientations agree with reference poses? |
+| `mixed3`: 75 images, 3 places | `revisit`: 62 images, 2 sessions, 1 place | `uav_building`: 120 consecutive frames |
 
-`courtyard` is a 36× accuracy gap, and it is not one unlucky run: across three
-independent runs of the same learned configuration I measured **516 mm, 849 mm and
-1111 mm**, while the two SIFT configurations landed on 29 mm and 31 mm. The learned front
-end is not just less accurate on that scene — it is unstable between runs.
+<p align="center">
+  <img src="figures/failure-visual.png" alt="Synthetic architectural point clouds illustrate different places falsely joined, two visits to the same courtyard incorrectly separated, and a camera with the correct centre but wrong viewing direction. These are explanatory examples, not measured reconstructions." width="1100">
+</p>
 
-The `pipes` row is the one that nearly fooled me. At 1024 px SIFT registers 8 of 14
-images, which reads as "the learned matcher wins on low-texture scenes". At full
-resolution SIFT registers all 14 with the best accuracy in the table. That gap was
-resolution, not SIFT, and the stock column is the control that caught it.
+## Recorded results
 
-## Result 2 — the learned matcher welds two different places together
+### Scene identity and completeness
 
-75 images from three scenes shuffled into one folder. Correct output is 3 reconstructions.
+| Experiment | Expected models | Learned | SIFT / shortlist | SIFT / stock settings |
+| :--- | ---: | :--- | :--- | :--- |
+| Different places (`mixed3`) | 3 | **2 models**, 75/75 registered | 3 models, 69/75 registered | 3 models, 75/75 registered |
+| Same place, two visits (`revisit`) | 1 | **2 models**, 62/62 registered | 1 model, 62/62 registered | Not reported |
+| Aerial sequence (`uav_building`) | 1 | 1 model, 120/120 registered | 1 model, 120/120 registered | 1 model, 120/120 registered |
 
-| | Registered | Clusters | Purity | Pair precision |
-|---|---|---|---|---|
-| learned | 75/75 | **2** | **0.693** | 0.856 (889/1039) |
-| SIFT @ matched res | 69/75 | 3 ✓ | 1.000 | **1.000** (559/559) |
-| SIFT @ stock | 75/75 | 3 ✓ | 1.000 | **1.000** (614/614) |
+<p align="center">
+  <img src="figures/results-mixed-scenes.png" alt="Recorded mixed-scene and revisit results comparing reconstruction counts, registration coverage, and mixed-scene purity across the available front ends." width="1050">
+</p>
 
-`courtyard` and `terrace` merged, and `terrace` was wrecked in the process — 8 of its 23
-cameras ended up more than 170° from their true orientation while the positions still
-looked plausible. Both scenes sit on the ETH Zürich campus and share facade, railing and
-paving texture, so LightGlue found *real*, locally consistent correspondences between
-them: 296 cross-scene pairs cleared its threshold and 150 survived geometric verification.
+### The aerial sequence: equal coverage, different poses
 
-**This is not about feature density.** The stock configuration writes 11928 keypoints per
-image — 2.6× what the learned arm gets, at three times the resolution — and produced
-**zero** cross-scene verified pairs. More features did not manufacture false links; the learned
-matcher did.
+| Front end | AUC@5° ↑ | Median rotation ↓ | Median position ↓ | Cameras with rotation error >170° ↓ |
+| :--- | ---: | ---: | ---: | ---: |
+| Learned | 0.593 | 64.33° | 0.098 u | 27/120 |
+| SIFT / shortlist | 0.947 | 0.94° | 0.001 u | 0/120 |
+| SIFT / stock settings | 0.953 | 0.52° | 0.001 u | 0/120 |
 
-## Result 3 — and it splits one place in half
+*`u` denotes the normalized Mill 19 coordinate frame, not metres. The recorded median inter-frame baseline is 0.041 u. These position errors cannot be compared directly with ETH3D millimetres.*
 
-`relief` and `relief_2` are 31 + 31 images of the *same* interior photographed twice.
-Correct output is 1 reconstruction.
+<p align="center">
+  <img src="figures/results-uav.png" alt="All three front ends register 120 of 120 aerial images, while recorded pose accuracy and mapping time differ. Mill 19 position units are normalized, not metric." width="1050">
+</p>
 
-| | Clusters | `relief` | `relief_2` |
-|---|---|---|---|
-| learned | **2** | 0.449, 58% registered | 0.289, **179.0°**, 20/20 cameras inverted |
-| SIFT @ matched res | **1** ✓ | **0.674**, 100% | **0.899 · 8 mm · 0.337°** |
+The common evaluation path makes the SIFT controls informative, but does not by itself validate every pose conversion or isolate one component. I still need repeat runs, matched realized feature budgets, camera-model controls, and checks against independent evaluation code.
 
-The learned run split the two sessions and then inverted one of them: after Sim(3)
-alignment every camera in the `relief_2` model points backwards, while the positions still
-fit to about a metre. The model looks plausible until you check where the cameras are
-aimed.
+<details>
+<summary><strong>Single-scene results and the resolution/budget control</strong></summary>
 
-## The two together
+<p align="center">
+  <img src="figures/results-single-scenes.png" alt="Recorded AUC and registration for pipes, terrace, and courtyard. The learned front end leads the reduced-resolution SIFT arm on pipes; the stock-setting SIFT arm registers all pipes images." width="1050">
+</p>
 
-| Situation | Correct | learned | SIFT + NN |
-|---|---|---|---|
-| three different places in one folder | 3 clusters | **2** — merges what should be separate | 3 ✓ |
-| one place photographed twice | 1 cluster | **2** — separates what should be merged | 1 ✓ |
+On `pipes`, learned matching registers 14/14 images, while SIFT / shortlist registers 8/14. SIFT / stock settings also registers 14/14. The stock arm changes resolution, feature cap, and pairing together; this result does not isolate a resolution-only effect.
 
-Wrong in both directions, on the same data where SIFT with nearest-neighbour matching is
-right in both, at 1/6 of the input resolution the stock configuration uses.
+For `courtyard`, I recorded learned median position errors of 516, 849, and 1111 mm across different runs. The 849 mm value comes from the mixed-scene run, so these are **not three controlled repeats of the same input**. I preserve the values without treating them as a statistical repeatability estimate.
 
-## Result 4 — on real aerial survey data, the gap is two orders of magnitude
+</details>
 
-Everything above is handheld ground-level capture. 120 consecutive frames from a Mill 19
-UAV flight — constant altitude, two flight strips, ground truth poses — test whether it
-transfers to the geometry the pipeline is meant for.
+[All tables, definitions, and timings →](RESULTS.md) · [Reusable result data →](results/reported/README.md) · [Figure sources and descriptions →](figures/README.md)
 
-| | Registered | Clusters | AUC@5° | Median position | Median rotation |
-|---|---|---|---|---|---|
-| learned | 120/120 | 1 ✓ | 0.593 | **2.4 baselines** | **64.3°**, 27 cameras inverted |
-| SIFT @ matched res | 120/120 | 1 ✓ | **0.947** | **1/41 baseline** | **0.94°**, none |
-| SIFT @ stock | 120/120 | 1 ✓ | **0.953** | **1/41 baseline** | **0.52°**, none |
+## How the comparison works
 
-*(Mill 19 ships no scale factor, so positions are normalised units expressed as multiples
-of the 0.041 median inter-frame baseline — not metres, and not comparable with the ETH3D
-figures above.)*
+| Configuration | Candidate pairs | Features + matcher | Nominal settings |
+| :--- | :--- | :--- | :--- |
+| `learned` | DINOv2 shortlist | ALIKED + LightGlue | 1024 px; cap 4600 |
+| `colmap-shortlist` | DINOv2 shortlist | SIFT + nearest neighbour / ratio test | 1024 px; cap 4600 |
+| `colmap-default` | Exhaustive | SIFT + nearest neighbour / ratio test | 3200 px; cap 8192 |
 
-**All three register every frame into one correct reconstruction.** On completeness and
-cluster count — the two things you can check without ground truth — they tie. The ground
-truth is what separates them: the learned reconstruction has a quarter of its cameras
-facing backwards while its positions still look plausible. It is `relief_2` again, on real
-survey data.
+I hold the mapping entry point and evaluation definitions in common. The first two arms use the same shortlisting procedure and nominal resolution/cap, but realized keypoint counts and camera initialization differ. The stock-setting arm is a broader baseline, not a one-variable ablation. [Controlled and uncontrolled variables →](docs/METHOD.md)
 
-**The control matters here.** A 64° median could just as easily mean my ground truth is
-wrong. It is not: the SIFT arm ran the same poses through the same evaluation, alignment
-and mapper and returned 0.94°.
+## Quick start
 
-Mapping took 2211.5 s for the learned front end against 911.6 s — it handed the mapper
-3367 verified pairs to SIFT's 2388, on the same CPU through the same call.
+The commands below are for my own work and separately authorized collaborators; they do not grant permission to reuse the repository. [Rights and permissions →](LICENSE)
 
----
-
----
-
-## A timing caveat, stated before any timing is quoted
-
-`pycolmap.has_cuda` is `False` on every published wheel. SIFT detection and
-nearest-neighbour matching run on the CPU; ALIKED and LightGlue go through torch and run
-on the GPU. **Front-end timings across configurations compare a GPU against a CPU and are
-meaningless.** `incremental_mapping` is the exception — COLMAP maps on the CPU either way,
-through the same call — so mapping time is the only timing behind any claim here. On the
-mixed set it was 543.8 s for the learned front end against 71.0 s and 199.7 s for the two
-SIFT configurations, which is a consequence of how many two-view geometries each fed the
-mapper.
-
-## Retrieval is a separate question from matching
-
-`min_pairs=58` keeps each image's 58 nearest DINOv2 neighbours, and at these collection
-sizes that floor — not the similarity threshold — decides the shortlist: 98% of all
-possible pairs retained at 62 images, 90% at 75. Retrieval earns its cost from collection
-size rather than from parameter tuning: an exhaustive pairing over 12000 images is 72
-million pairs, and shortlisting is what makes that finite. That argument is independent of
-which matcher runs afterwards, and nothing measured here weakens it.
-
-## What broke in the port
-
-Written against Python 3.10 with pinned wheels that no longer resolve on 3.13. Current
-PyPI versions install cleanly, but four API changes stop the code, and two properties of
-the current wheel quietly change what a benchmark means. Details in
-[`docs/porting-notes.md`](docs/porting-notes.md).
-
-## Layout
-
-```
-src/sfm_pipeline.py      the ported learned front end, COLMAP ingestion, metrics
-src/baseline_colmap.py   COLMAP's own front end, and the matching-precision measures
-src/uav_dataset.py       Mill 19 aerial frames and the Mega-NeRF pose convention
-src/run_experiments.py   dataset builders, the experiment driver, link diagnostics
-RESULTS.md               every number and every timing
-docs/porting-notes.md    the API breakages, with before/after
-figures/                 static SVG, light and dark
-tools/make_figures.py    regenerates them
-```
-
-## Running it
+Inspect the command interface and run the lightweight regression checks without downloading datasets or model weights:
 
 ```bash
-pip install pycolmap kornia kornia_moons h5py transformers opencv-python
-pip install git+https://github.com/cvg/LightGlue.git
-
-python src/run_experiments.py --fetch eth3d --scenes courtyard terrace pipes relief relief_2
-python src/run_experiments.py --experiment mixed3 --pipeline learned
-python src/run_experiments.py --experiment mixed3 --pipeline colmap-shortlist
-python src/run_experiments.py --experiment mixed3 --pipeline colmap-default
-python src/run_experiments.py --experiment revisit --pipeline learned
-
-# aerial: expects Mill 19 under $SFM_UAV (building-pixsfm / rubble-pixsfm)
-python src/run_experiments.py --check-poses
-python src/run_experiments.py --experiment uav_building --pipeline learned --max-num-models 4
-python src/run_experiments.py --experiment uav_building --pipeline colmap-shortlist --max-num-models 4
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+python src/run_experiments.py --help
+python -m unittest discover -s tests -v
+python tools/validate_repository.py
 ```
 
-Needs a CUDA GPU for the learned front end. Verified on a Colab T4 with Python 3.13.15,
-torch 2.11.0+cu128, pycolmap 4.2.0, kornia 0.8.3, transformers 5.16.1.
+For reconstruction dependencies, data preparation, and a first experiment, see [Getting started](docs/GETTING_STARTED.md). GPU experiments are separate from the lightweight checks above.
 
-## Limitations
+## Documentation
 
-- Five ETH3D scenes, at most 75 images per run, one run per configuration except
-  `courtyard` under `learned`, which I ran three times precisely because it was unstable.
-  These are small numbers.
-- ETH3D is ground-level handheld DSLR capture: high overlap, controlled, well textured.
-  LightGlue's published advantages are largest under wide baselines, low overlap and
-  illumination change, which this data does not test. **The result here is "on this data",
-  not "learned matchers are worse".**
-- I ran the learned front end at 1024 px. The matched SIFT arm ran at the same resolution,
-  so that variable is controlled, but both are below what a production pipeline would use —
-  and the `pipes` row shows how much resolution can matter. The realized keypoint counts
-  are *not* matched: see the caveat under "What is held identical".
-- The aerial section is one site, one 120-frame window, one run per configuration. It is
-  a single flight over an industrial building, not a village, and nothing here establishes
-  how either front end behaves across a 12000-image survey.
-- Mill 19 has no metric scale factor, so its position errors are ratios, not distances.
+| Guide | Contents |
+| :--- | :--- |
+| [Method](docs/METHOD.md) | Pipeline, controls, pose conventions, metric definitions |
+| [Getting started](docs/GETTING_STARTED.md) | Installation, smoke checks, first run |
+| [Experiments](docs/EXPERIMENTS.md) | Commands, configurations, run outputs, ablations |
+| [Data and references](docs/DATA_SOURCES.md) | Dataset layout, upstream resources, attribution |
+| [Results](RESULTS.md) | Historical tables with evidence and unit boundaries |
+| [Audit](docs/AUDIT.md) | File review, corrections, unresolved evidence gaps |
+| [Porting notes](docs/porting-notes.md) | Historical API migration and environment observations |
+| [Roadmap](docs/ROADMAP.md) | Implemented work and open research tasks |
 
-## License
+<details>
+<summary><strong>Repository structure</strong></summary>
 
-MIT — see [`LICENSE`](LICENSE). The datasets are not mine and carry their own terms; see
-below.
+```text
+src/                 Front ends, dataset preparation, mapping, evaluation
+tests/               Lightweight regression tests
+results/reported/    Machine-readable historical summaries and provenance
+figures/             Editable diagrams and result plots; PNG previews
+figures/archive/     Earlier figures retained with their evidence caveats
+tools/               Figure generation and repository validation
+docs/                Method, reproduction, audit, and research roadmap
+```
 
-## Data and credits
+</details>
 
-- **ETH3D** high-resolution multi-view — <https://www.eth3d.net/datasets>
-- **Mill 19** (Mega-NeRF) — <https://meganerf.cmusatyalab.org>
-- **LightGlue / ALIKED** — <https://github.com/cvg/LightGlue>
-- **DINOv2** — `facebook/dinov2-base`
-- **COLMAP / pycolmap** — <https://colmap.github.io>
+## Scope and next steps
+
+I have not yet established performance on a 12,000-image survey, repeated the full comparison across seeds/sites, or evaluated a classical-first fallback design. I will use fresh, archived runs to test these questions. The current findings are specific to the recorded configurations and datasets. [Research roadmap →](docs/ROADMAP.md)
+
+## Acknowledgements and rights
+
+I build on DINOv2, ALIKED, LightGlue, COLMAP/pycolmap, ETH3D, and Mill 19/Mega-NeRF. I keep their datasets, model weights, and licenses separate from my repository terms. [Sources and attribution →](docs/DATA_SOURCES.md)
+
+**All rights reserved for new original material in this revision.** No general reuse license is granted. Material previously distributed under MIT remains subject to that grant; I preserve its notice in [LICENSES/MIT-legacy.txt](LICENSES/MIT-legacy.txt). See [LICENSE](LICENSE) and [licensing scope](docs/LICENSING.md).

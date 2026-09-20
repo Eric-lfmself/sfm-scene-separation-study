@@ -1,0 +1,10 @@
+scene,config,auc5,median_position_mm,cameras_over_170_deg,note
+courtyard,learned,0.678,849,,
+courtyard,colmap-shortlist,0.906,30,,
+courtyard,colmap-default,0.898,34,,
+terrace,learned,0.101,2246,8,8 of 23 cameras with rotation errors >170 degrees
+terrace,colmap-shortlist,0.928,8,,
+terrace,colmap-default,0.933,7,,
+pipes,learned,0.861,8,,
+pipes,colmap-shortlist,0.209,32,,57% registered
+pipes,colmap-default,0.927,5,,

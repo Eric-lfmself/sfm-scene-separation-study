@@ -1,0 +1,4 @@
+config,registered,total,clusters,expected_clusters,purity,inlier_ratio,pair_precision,same_scene_verified_pairs,all_verified_pairs,mapping_s
+learned,75,75,2,3,0.6933,0.8396,0.8556,889,1039,543.8
+colmap-shortlist,69,75,3,3,1,0.8532,1,559,559,71.0
+colmap-default,75,75,3,3,1,0.8946,1,614,614,199.7

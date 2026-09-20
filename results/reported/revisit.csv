@@ -1,0 +1,3 @@
+config,registered,total,clusters,expected_clusters,inlier_ratio,mapping_s
+learned,62,62,2,1,0.7154,147.5
+colmap-shortlist,62,62,1,1,0.9053,116.0

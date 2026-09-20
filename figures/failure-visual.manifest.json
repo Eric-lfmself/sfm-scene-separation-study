@@ -1,0 +1,37 @@
+{
+  "name": "failure-visual",
+  "description": "Three original synthetic 3D illustrations explain SfM failure mechanisms. Left: a stone courtyard with a tower and an industrial shed with cylindrical tanks belong to different places, but dashed red correspondences connect their camera groups into one wrong component. Centre: the same recognizable courtyard is drawn twice with blue and teal camera groups; a broken cross-session link leaves two disconnected reconstructions. Right: cameras follow a trajectory around one building; a blue reference frustum and a dashed red erroneous frustum share the same centre but face different directions. Insets enlarge the correspondence and camera-direction mechanisms. Every scene, view, point cloud and pose is schematic, not a measured result or a dataset image.",
+  "files": [
+    "failure-visual.svg",
+    "failure-visual.png"
+  ],
+  "width_inches": 19.5,
+  "height_inches": 10.1,
+  "png_dpi": 180,
+  "background": "#FFFFFF",
+  "svg_text": "editable, fonts not embedded",
+  "svg_font_fallback": [
+    "DejaVu Sans",
+    "Arial",
+    "Helvetica",
+    "sans-serif"
+  ],
+  "png_font": "DejaVu Sans (rendered by Matplotlib)",
+  "uncertainty": "Not applicable: original synthetic schematic, with no measured estimates.",
+  "software": {
+    "python": "3.12.14",
+    "matplotlib": "3.10.8",
+    "numpy": "2.5.3"
+  },
+  "sources": [],
+  "transformations": [
+    "Original parameterized 3D buildings and camera frusta projected orthographically.",
+    "Point-cloud texture uses a fixed random seed; view cards reuse the same synthetic geometry.",
+    "No measured coordinates, images or matching results are used.",
+    "SVG reuses identical clip paths and collection styling; every point coordinate is retained."
+  ],
+  "evidence_status": "schematic",
+  "geometry_seed": 20920,
+  "generator": "tools/make_failure_visual.py",
+  "generator_sha256": "c8f5750becf70458a00a9dee9f2cbcc88c134b4a1e3e679634aadee5b532c058"
+}

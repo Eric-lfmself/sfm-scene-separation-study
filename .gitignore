@@ -20,3 +20,23 @@ venv/
 # os
 .DS_Store
 Thumbs.db
+
+# Private manuscript sources, PDFs, and TeX build products stay local.
+paper/
+*.pdf
+*.tex
+*.aux
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.toc
+*.out
+*.tmp
+
+# Local configuration and credentials
+.env
+.env.*
+.cursor/
+.codex/
+.pytest_cache/
+preview/

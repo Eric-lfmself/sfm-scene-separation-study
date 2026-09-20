@@ -1,21 +1,39 @@
-MIT License
+ALL RIGHTS RESERVED
 
 Copyright (c) 2026 Bowen Liu
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Except for the exclusions below, all rights in original material first added
+by Bowen Liu in this revision and later revisions are reserved. No license
+is granted to use, copy, modify, distribute, sublicense, sell, or create
+derivative works from that material, for commercial, academic, research,
+educational, or other purposes, without prior written permission from the
+copyright holder.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Viewing or receiving access to this repository does not by itself grant
+any additional permission. The repository is not offered under an open
+source license.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+EXCLUSIONS AND EXISTING RIGHTS
+
+1. Previously licensed material. Material distributed under the MIT License
+   at commit 7e0d60c70d523228e33d9175b0f66e1ed1e6eddc retains the rights granted
+   by that license. This notice does not revoke or restrict an existing MIT
+   grant. The MIT notice is preserved in LICENSES/MIT-legacy.txt. Changes
+   to an earlier file do not retroactively remove rights in earlier content.
+
+2. Third-party material. Dependencies, datasets, pretrained weights, and
+   any third-party content remain governed by their respective licenses and
+   rights holders. This notice does not replace those terms or claim
+   ownership of third-party material.
+
+3. Mandatory rights. Nothing here restricts rights that cannot lawfully be
+   restricted, or permissions required by the applicable hosting platform's
+   terms of service.
+
+Permission requests: contact Bowen Liu through the contact information on
+https://github.com/Eric-lfmself . Permission is effective only when granted
+in writing by the relevant rights holder.
+
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE MATERIAL IS PROVIDED "AS IS",
+WITHOUT WARRANTY OF ANY KIND. THE COPYRIGHT HOLDER SHALL NOT BE LIABLE FOR
+CLAIMS, DAMAGES, OR OTHER LIABILITY ARISING FROM THE MATERIAL OR ITS USE.

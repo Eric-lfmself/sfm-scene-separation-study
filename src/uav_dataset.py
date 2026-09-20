@@ -16,14 +16,15 @@ is not automatically a split for Structure-from-Motion.
 **The poses are camera-to-world in the NeRF convention** (x right, y up, z backward),
 stored as a 3x4 `c2w` next to `intrinsics = (fx, fy, cx, cy)`. COLMAP wants
 world-to-camera with y down and z forward, so every pose goes through `FLIP` below.
-`--check-poses` verifies the conversion rather than trusting it.
+`--check-poses` reports trajectory continuity and rotation orthonormality. These
+checks cannot by themselves establish the physical camera-axis convention.
 """
 
 import glob
 import os
 
 import numpy as np
-import torch
+from dataset_utils import sync_image_links
 
 # NeRF/OpenGL camera axes -> COLMAP/OpenCV camera axes.
 FLIP = np.diag([1.0, -1.0, -1.0])
@@ -46,65 +47,78 @@ def frame_ids(data_root, site, split='train'):
 
 def read_pose(meta_path):
     """One Mega-NeRF metadata file -> (R_cw, t_cw) in COLMAP's world-to-camera form."""
-    m = torch.load(meta_path, map_location='cpu', weights_only=False)
-    c2w = np.asarray(m['c2w'], dtype=np.float64)
+    import torch
+
+    # Tensor metadata only: never fall back to executing arbitrary pickle objects.
+    m = torch.load(meta_path, map_location='cpu', weights_only=True)
+    return convert_c2w(m['c2w'])
+
+
+def convert_c2w(c2w):
+    """Convert a finite rigid 3x4 camera-to-world matrix to COLMAP axes."""
+    c2w = np.asarray(c2w, dtype=np.float64)
+    if c2w.shape != (3, 4) or not np.isfinite(c2w).all():
+        raise ValueError('c2w must be a finite 3x4 matrix')
     R_wc, t_wc = c2w[:, :3], c2w[:, 3]
+    if not np.allclose(R_wc.T @ R_wc, np.eye(3), atol=1e-4) or not np.isclose(np.linalg.det(R_wc), 1, atol=1e-4):
+        raise ValueError('c2w rotation must be orthonormal with determinant +1')
     R_cw = FLIP @ R_wc.T
     t_cw = -R_cw @ t_wc
     return R_cw, t_cw
 
 
-def build_uav_dataset(work, data_root, name, sites, n_per_site, start=0, stride=1):
+def build_uav_dataset(work, data_root, name, sites, n_per_site, start=0, stride=1, output_dir=None):
     """Symlink `n_per_site` CONSECUTIVE frames per site into one folder.
 
     Consecutive is the whole point: it is what gives the frames enough overlap to
     reconstruct at all. Returns (images_dir, gt, labels) exactly like the ETH3D builder,
     so everything downstream is shared.
     """
-    d = os.path.join(work, name, 'images')
-    os.makedirs(d, exist_ok=True)
-    gt, labels = {}, {}
+    if not sites or len(set(sites)) != len(sites):
+        raise ValueError('provide at least one distinct UAV site')
+    if n_per_site <= 0 or start < 0 or stride <= 0:
+        raise ValueError('n_per_site and stride must be positive; start must be nonnegative')
+    d = output_dir or os.path.join(work, name, 'images')
+    gt, labels, sources = {}, {}, {}
     multi = len(sites) > 1
     for s in sites:
         base = site_dir(data_root, s)
         ids = frame_ids(data_root, s)[start::stride][:n_per_site]
         if len(ids) < n_per_site:
-            raise SystemExit(f'{s}: wanted {n_per_site} frames from {start}, got {len(ids)}')
+            raise ValueError(f'{s}: wanted {n_per_site} frames from {start}, got {len(ids)}')
         for fid in ids:
             key = f'{s}__{fid}.jpg' if multi else f'{fid}.jpg'
-            dst = os.path.join(d, key)
-            if not os.path.exists(dst):
-                os.symlink(os.path.join(base, 'rgbs', f'{fid}.jpg'), dst)
+            sources[key] = os.path.join(base, 'rgbs', f'{fid}.jpg')
             labels[key] = s
             gt[key] = read_pose(os.path.join(base, 'metadata', f'{fid}.pt'))
+    sync_image_links(d, sources)
     return d, gt, labels
 
 
-def check_poses(data_root, site='building', n=60):
-    """Sanity-check the convention without running the pipeline.
+def check_poses(data_root, site='building', n=120, start=0):
+    """Report continuity over a selected train window; this is not an axis proof.
 
-    Over a continuous flight the camera moves smoothly, so consecutive baselines should
-    be small and comparable, and consecutive optical axes should be nearly parallel. A
-    wrong axis convention shows up here as optical axes that disagree by ~90 or ~180
-    degrees while the positions still look plausible -- the same silent failure the
-    Sim(3) rotation column catches later.
+    A fixed camera-axis flip preserves both orthonormality and consecutive optical-
+    axis angles. Validate physical convention separately using documented metadata
+    and image/pose correspondences. Printed indices identify the checked window.
     """
-    ids = frame_ids(data_root, site)[:n]
+    if n < 2 or start < 0:
+        raise ValueError('pose check needs at least two frames and a nonnegative start')
+    ids = frame_ids(data_root, site)[start:start + n]
+    if len(ids) < 2:
+        raise ValueError(f'{site}: found fewer than two frames in the requested window')
     base = site_dir(data_root, site)
-    C, Z = [], []
-    for fid in ids:
-        R, t = read_pose(os.path.join(base, 'metadata', f'{fid}.pt'))
-        C.append(-R.T @ t)          # camera centre in world coordinates
-        Z.append(R[2])              # optical axis in world coordinates
-    C, Z = np.asarray(C), np.asarray(Z)
+    poses = [read_pose(os.path.join(base, 'metadata', f'{fid}.pt')) for fid in ids]
+    C = np.asarray([-R.T @ t for R, t in poses])
+    Z = np.asarray([R[2] for R, _ in poses])
     steps = np.linalg.norm(np.diff(C, axis=0), axis=1)
-    dots = np.clip(np.sum(Z[:-1] * Z[1:], axis=1), -1, 1)
-    ang = np.degrees(np.arccos(dots))
-    print(f'  {site}: {len(ids)} consecutive frames')
-    print(f'    baseline between consecutive frames: median {np.median(steps):.3f}, '
+    ang = np.degrees(np.arccos(np.clip(np.sum(Z[:-1] * Z[1:], axis=1), -1, 1)))
+    residual = max(np.abs(R @ R.T - np.eye(3)).max() for R, _ in poses)
+    print(f'  {site}: {len(ids)} consecutive train frames, indices {start}–{start + len(ids) - 1}')
+    print(f'    baseline: median {np.median(steps):.3f}, '
           f'p90 {np.percentile(steps, 90):.3f}, max {steps.max():.3f}')
-    print(f'    turn between consecutive optical axes: median {np.median(ang):.2f} deg, '
+    print(f'    consecutive optical-axis angle: median {np.median(ang):.2f} deg, '
           f'max {ang.max():.2f} deg')
-    print(f'    R orthonormal: max |R R^T - I| = '
-          f'{max(np.abs(np.asarray(read_pose(os.path.join(base, "metadata", f"{f}.pt"))[0]) @ np.asarray(read_pose(os.path.join(base, "metadata", f"{f}.pt"))[0]).T - np.eye(3)).max() for f in ids[:5]):.2e}')
+    print(f'    R orthonormal: max |R R^T - I| = {residual:.2e}')
+    print('    Scope: continuity only; a fixed axis flip cannot be diagnosed by this check.')
     return steps, ang

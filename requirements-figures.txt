@@ -1,0 +1,3 @@
+# Static SVG/PNG figure generation only; no reconstruction dependencies.
+# Validated with Python 3.12 and this Matplotlib release.
+matplotlib==3.10.8

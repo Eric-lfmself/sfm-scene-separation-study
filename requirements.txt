@@ -1,0 +1,16 @@
+# Reconstruction environment for Python >=3.10.
+# This is a compatibility specification, NOT the recovered historical lockfile.
+# Install a matching torch/torchvision build for your CUDA platform first.
+numpy>=1.26,<3
+torch>=2.6,<3
+torchvision>=0.21,<1
+pycolmap==4.2.0
+kornia==0.8.3
+transformers>=5,<6
+h5py>=3.11,<4
+opencv-python>=4.9,<5
+tqdm>=4.66,<5
+# Official LightGlue v0.2 source, pinned to the release commit.
+lightglue @ git+https://github.com/cvg/LightGlue.git@edb2b838efb2ecfe3f88097c5fad9887d95aedad
+# pycolmap wheels may be CPU-only. For SIFT GPU runs use the matching COLMAP
+# CUDA build for the platform; record it in the run report and environment freeze.

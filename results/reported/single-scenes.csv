@@ -1,0 +1,10 @@
+scene,config,registered,total,auc5,auc10,auc20,median_position_mm,median_rotation_deg,mapping_s
+pipes,learned,14,14,0.89,0.947,0.973,6,0.255,10.4
+pipes,colmap-shortlist,8,14,0.241,0.271,0.289,12,0.624,7.8
+pipes,colmap-default,14,14,0.928,0.964,0.982,5,0.238,11.4
+terrace,learned,23,23,0.893,0.946,0.973,16,0.43,36.0
+terrace,colmap-shortlist,23,23,0.931,0.966,0.983,7,0.285,16.8
+terrace,colmap-default,23,23,0.932,0.966,0.983,7,0.285,31.9
+courtyard,learned,38,38,0.643,0.698,0.726,1111,5.331,154.2
+courtyard,colmap-shortlist,38,38,0.891,0.945,0.973,29,0.168,48.4
+courtyard,colmap-default,38,38,0.899,0.949,0.975,31,0.18,105.6

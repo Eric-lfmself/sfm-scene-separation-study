@@ -1,0 +1,272 @@
+{
+  "generator": "tools/make_figures.py",
+  "python": "3.12.14",
+  "matplotlib": "3.10.8",
+  "numpy": "2.5.3",
+  "source_snapshot": "RESULTS.md at commit 7e0d60c",
+  "experiments_rerun": false,
+  "source_sha256": {
+    "results/reported/mixed-scene-poses.csv": "b35bcacdcfa9a72428e67b4eb7debc4cb4adee085affc6a74557fbf73f57833b",
+    "results/reported/mixed-scenes.csv": "673e8f864020b18e79091324a3754088588f6cb5d7faf3d30c49c59c484cb35b",
+    "results/reported/retrieval.csv": "9eb0f5e44e9d1f8cb8f17014270f29be8d1d6b1346eec14fbdb095b3acc7d31f",
+    "results/reported/revisit-links.csv": "e2cdbd3dbc03a6f5f6a96537cd9749fc905935ddf3072e4d1bafcee1b65ea176",
+    "results/reported/revisit.csv": "5016c76cb319a813c7df4952c57876f77b0966802c4def1cdbc8c48452b0f03c",
+    "results/reported/single-scenes.csv": "76ca8f8ab8a0309a5e4d9b961b4740957ce5d921c2ddd57af4a0aa6c4f86c656",
+    "results/reported/uav.csv": "f3db773708a2fd706ad3d728e5ed242da302316729f978ae1b2290b2da583820",
+    "results/reported/verified-link-ranges.csv": "c459cc566d361597128354d746ce25d4120fffab4f5202da217db4209a956c6f"
+  },
+  "figures": [
+    {
+      "name": "framework-overview",
+      "description": "Three arms compare DINOv2 retrieval with ALIKED and LightGlue, the same retrieval procedure with SIFT and nearest-neighbour matching, and exhaustive SIFT matching. All lead to COLMAP mapping and evaluation of separation, pose and CPU cost. Feature counts and camera initialization/import paths differ; this is not a matcher-only ablation.",
+      "files": [
+        "framework-overview.svg",
+        "framework-overview.png"
+      ],
+      "width_inches": 13.0,
+      "height_inches": 9.4,
+      "png_dpi": 180,
+      "background": "#FFFFFF",
+      "svg_text": "editable, fonts not embedded",
+      "svg_font_fallback": [
+        "DejaVu Sans",
+        "Arial",
+        "Helvetica",
+        "sans-serif"
+      ],
+      "png_font": "DejaVu Sans (rendered by Matplotlib)",
+      "sources": [],
+      "transformations": [
+        "Hand-drawn schematic from src/sfm_pipeline.py, src/baseline_colmap.py and src/run_experiments.py; no empirical coordinates."
+      ],
+      "evidence_status": "schematic",
+      "uncertainty": "No replicate-level uncertainty available; no intervals inferred."
+    },
+    {
+      "name": "failure-modes",
+      "description": "Three explicitly schematic examples: a false cross-scene bridge merges different places, insufficient cross-session connectivity splits a single place, and matching camera centres conceal incorrect orientations. No plotted points are reconstructed data.",
+      "files": [
+        "failure-modes.svg",
+        "failure-modes.png"
+      ],
+      "width_inches": 13.0,
+      "height_inches": 8.4,
+      "png_dpi": 180,
+      "background": "#FFFFFF",
+      "svg_text": "editable, fonts not embedded",
+      "svg_font_fallback": [
+        "DejaVu Sans",
+        "Arial",
+        "Helvetica",
+        "sans-serif"
+      ],
+      "png_font": "DejaVu Sans (rendered by Matplotlib)",
+      "sources": [],
+      "transformations": [
+        "Illustrative graph layouts and camera frusta are manually positioned, with no experimental data."
+      ],
+      "evidence_status": "schematic",
+      "uncertainty": "No replicate-level uncertainty available; no intervals inferred."
+    },
+    {
+      "name": "results-single-scenes",
+      "description": "Four panels show recorded single-scene AUC at 5 degrees, median camera-centre error in millimetres on a base-10 log scale, registered image counts, and CPU mapping time. SIFT shortlist registers 8/14 pipes images; learned courtyard has 1111 mm median position error. Comparisons change detector and matcher together, and default also changes pairing and budget.",
+      "files": [
+        "results-single-scenes.svg",
+        "results-single-scenes.png"
+      ],
+      "width_inches": 13.0,
+      "height_inches": 9.3,
+      "png_dpi": 180,
+      "background": "#FFFFFF",
+      "svg_text": "editable, fonts not embedded",
+      "svg_font_fallback": [
+        "DejaVu Sans",
+        "Arial",
+        "Helvetica",
+        "sans-serif"
+      ],
+      "png_font": "DejaVu Sans (rendered by Matplotlib)",
+      "sources": [
+        "results/reported/single-scenes.csv"
+      ],
+      "transformations": [
+        "Registration plotted as 100 \u00d7 registered / total, with original counts annotated.",
+        "Position uses a base-10 logarithmic axis; no zeros or missing observations.",
+        "AUC5 shown; AUC10, AUC20 and rotation remain in source table.",
+        "Bars start at zero. No error bars or aggregation across scenes."
+      ],
+      "evidence_status": "historical_summary_not_rerun",
+      "uncertainty": "No replicate-level uncertainty available; no intervals inferred."
+    },
+    {
+      "name": "results-mixed-scenes",
+      "description": "Four panels compare recorded mixed-scene and revisit cluster counts, mixed-scene verified-pair precision and cluster purity, mixed-scene median camera-centre errors, and CPU mapping time. Expected clusters are three for mixed and one for revisit. The learned arm reports two in both. The default revisit configuration was not reported, shown as NR rather than zero.",
+      "files": [
+        "results-mixed-scenes.svg",
+        "results-mixed-scenes.png"
+      ],
+      "width_inches": 13.0,
+      "height_inches": 9.3,
+      "png_dpi": 180,
+      "background": "#FFFFFF",
+      "svg_text": "editable, fonts not embedded",
+      "svg_font_fallback": [
+        "DejaVu Sans",
+        "Arial",
+        "Helvetica",
+        "sans-serif"
+      ],
+      "png_font": "DejaVu Sans (rendered by Matplotlib)",
+      "sources": [
+        "results/reported/mixed-scenes.csv",
+        "results/reported/mixed-scene-poses.csv",
+        "results/reported/revisit.csv"
+      ],
+      "transformations": [
+        "Plot recorded cluster counts and metric fractions directly.",
+        "Position uses a base-10 logarithmic axis.",
+        "Missing colmap-default revisit result remains missing (NR).",
+        "Expected counts are reference lines, not observations.",
+        "No uncertainty inferred."
+      ],
+      "evidence_status": "historical_summary_not_rerun",
+      "uncertainty": "No replicate-level uncertainty available; no intervals inferred."
+    },
+    {
+      "name": "results-uav",
+      "description": "Four panels show recorded Mill 19 AUC at 5, 10 and 20 degrees, median position error in normalized units on a log scale, median rotation error, and CPU mapping time. All configurations register 120 images in one model, but learned has median rotation error 64.33 degrees and 27 cameras over 170 degrees. Normalized units are not metres and feature counts differ.",
+      "files": [
+        "results-uav.svg",
+        "results-uav.png"
+      ],
+      "width_inches": 13.0,
+      "height_inches": 9.3,
+      "png_dpi": 180,
+      "background": "#FFFFFF",
+      "svg_text": "editable, fonts not embedded",
+      "svg_font_fallback": [
+        "DejaVu Sans",
+        "Arial",
+        "Helvetica",
+        "sans-serif"
+      ],
+      "png_font": "DejaVu Sans (rendered by Matplotlib)",
+      "sources": [
+        "results/reported/uav.csv"
+      ],
+      "transformations": [
+        "Plot AUC at its three reported angular thresholds, connecting points only to identify configurations.",
+        "Position axis uses base-10 logarithm; no zeros.",
+        "Rotation axis is linear, starting at zero.",
+        "Only shared CPU mapping time is shown, not heterogeneous front-end timings."
+      ],
+      "evidence_status": "historical_summary_not_rerun",
+      "uncertainty": "No replicate-level uncertainty available; no intervals inferred."
+    },
+    {
+      "name": "link-ranges",
+      "description": "Recorded mixed-scene verified-link distributions shown as minimum-to-maximum lines, 10th-to-90th-percentile thick lines and median markers. Within-scene n889 ranges 15 to 3376 with median 308; false cross-scene n150 ranges 15 to 85 with median 22. These are summaries, not intervals of statistical uncertainty or evidence for a universal cutoff.",
+      "files": [
+        "link-ranges.svg",
+        "link-ranges.png"
+      ],
+      "width_inches": 13.0,
+      "height_inches": 5.7,
+      "png_dpi": 180,
+      "background": "#FFFFFF",
+      "svg_text": "editable, fonts not embedded",
+      "svg_font_fallback": [
+        "DejaVu Sans",
+        "Arial",
+        "Helvetica",
+        "sans-serif"
+      ],
+      "png_font": "DejaVu Sans (rendered by Matplotlib)",
+      "sources": [
+        "results/reported/verified-link-ranges.csv",
+        "results/reported/revisit-links.csv"
+      ],
+      "transformations": [
+        "Use base-10 logarithmic inlier-count axis.",
+        "Do not synthesize observations, histogram bins, unseen percentiles or uncertainty intervals.",
+        "Only RESULTS snapshot values are used; legacy conflicting histogram is archived separately."
+      ],
+      "evidence_status": "historical_summary_not_rerun",
+      "uncertainty": "No replicate-level uncertainty available; no intervals inferred."
+    },
+    {
+      "name": "method-visual",
+      "description": "Original illustrative graphical abstract, not an experimental reconstruction. Three perspective images of a deterministic L-shaped courtyard lead to schematic descriptors and a similarity matrix, a verified image graph, and sparse 3D points with camera frusta. Three colored imaging rays meet at a shared facade landmark. Three compact comparison arms join before COLMAP geometry and the shared incremental mapper. Lower panels zoom into projected landmark correspondences and the same synthetic architecture reconstructed as an illustrative point cloud. All displayed image geometry, descriptor values and graph links are explanatory examples, not measured results.",
+      "files": [
+        "method-visual.svg",
+        "method-visual.png"
+      ],
+      "width_inches": 14,
+      "height_inches": 12,
+      "png_dpi": 180,
+      "background": "#FFFFFF",
+      "svg_text": "editable, fonts not embedded",
+      "svg_font_fallback": [
+        "DejaVu Sans",
+        "Arial",
+        "Helvetica",
+        "sans-serif"
+      ],
+      "png_font": "DejaVu Sans (rendered by Matplotlib)",
+      "sources": [],
+      "transformations": [
+        "Hand-built L-shaped courtyard mesh in a shared synthetic 3D coordinate system.",
+        "Perspective projection from three explicitly defined cameras, with projected landmark correspondences.",
+        "Deterministic point sampling on the same mesh; seed 20260920. Three camera rays converge on the same synthetic facade landmark.",
+        "Illustrative descriptors, similarity matrix and graph links; no empirical quantities."
+      ],
+      "evidence_status": "schematic",
+      "uncertainty": "Not applicable; no experimental observations are plotted.",
+      "geometry_seed": 20260920,
+      "geometry_method": "pinhole perspective projection of original parametric courtyard mesh; seeded uniform surface samples",
+      "generator": "tools/make_method_visual.py",
+      "generator_sha256": "8c5e60490c556d7e4469829b9e967e545c2a3f03f71276668ed87dc03e6f88e8",
+      "python": "3.12.14",
+      "matplotlib": "3.10.8",
+      "numpy": "2.5.3"
+    },
+    {
+      "name": "failure-visual",
+      "description": "Three original synthetic 3D illustrations explain SfM failure mechanisms. Left: a stone courtyard with a tower and an industrial shed with cylindrical tanks belong to different places, but dashed red correspondences connect their camera groups into one wrong component. Centre: the same recognizable courtyard is drawn twice with blue and teal camera groups; a broken cross-session link leaves two disconnected reconstructions. Right: cameras follow a trajectory around one building; a blue reference frustum and a dashed red erroneous frustum share the same centre but face different directions. Insets enlarge the correspondence and camera-direction mechanisms. Every scene, view, point cloud and pose is schematic, not a measured result or a dataset image.",
+      "files": [
+        "failure-visual.svg",
+        "failure-visual.png"
+      ],
+      "width_inches": 19.5,
+      "height_inches": 10.1,
+      "png_dpi": 180,
+      "background": "#FFFFFF",
+      "svg_text": "editable, fonts not embedded",
+      "svg_font_fallback": [
+        "DejaVu Sans",
+        "Arial",
+        "Helvetica",
+        "sans-serif"
+      ],
+      "png_font": "DejaVu Sans (rendered by Matplotlib)",
+      "uncertainty": "Not applicable: original synthetic schematic, with no measured estimates.",
+      "software": {
+        "python": "3.12.14",
+        "matplotlib": "3.10.8",
+        "numpy": "2.5.3"
+      },
+      "sources": [],
+      "transformations": [
+        "Original parameterized 3D buildings and camera frusta projected orthographically.",
+        "Point-cloud texture uses a fixed random seed; view cards reuse the same synthetic geometry.",
+        "No measured coordinates, images or matching results are used.",
+        "SVG reuses identical clip paths and collection styling; every point coordinate is retained."
+      ],
+      "evidence_status": "schematic",
+      "geometry_seed": 20920,
+      "generator": "tools/make_failure_visual.py",
+      "generator_sha256": "c8f5750becf70458a00a9dee9f2cbcc88c134b4a1e3e679634aadee5b532c058"
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "status": "Unverified legacy rendering snapshot; inconsistent with RESULTS.md at 7e0d60c. Not combined with current reported results.",
+  "source": "tools/make_figures.py at 7e0d60c, preserved in figures/archive/make_figures_legacy.py",
+  "histogram": {
+    "edges": [
+      15,
+      22,
+      32,
+      46,
+      68,
+      100,
+      146,
+      215,
+      316,
+      464,
+      681,
+      1000,
+      1468,
+      2154,
+      3400
+    ],
+    "within": [
+      39,
+      50,
+      47,
+      48,
+      54,
+      64,
+      75,
+      80,
+      107,
+      92,
+      94,
+      55,
+      47,
+      38
+    ],
+    "cross": [
+      71,
+      38,
+      19,
+      14,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "bin_inclusion": "Not specified in original script"
+  },
+  "ranges": [
+    {
+      "label": "Within-scene",
+      "n": 890,
+      "min": 15,
+      "p10": 32,
+      "median": 302,
+      "p90": 1421,
+      "max": 3379
+    },
+    {
+      "label": "Cross-session",
+      "n": 370,
+      "min": 15,
+      "p10": 18,
+      "median": 51,
+      "p90": 225,
+      "max": 860
+    },
+    {
+      "label": "Cross-scene",
+      "n": 150,
+      "min": 15,
+      "p10": 16,
+      "median": 22,
+      "p90": 54,
+      "max": 83
+    },
+    {
+      "label": "Cross-site (UAV)",
+      "n": 195,
+      "min": 15,
+      "p10": 15,
+      "median": 16,
+      "p90": 19,
+      "max": 37
+    }
+  ]
+}
