@@ -74,7 +74,6 @@ I visually inspected all eight current figure exports. The implementation tests 
 ## Unresolved work
 
 - Recover the missing original artifacts or rerun the benchmark with retained evidence.
-- Resolve the earlier Kaggle baseline's author, URL, and license before making stronger source-ownership claims.
 - Match camera models, realized feature counts, and verification settings in further controls.
 - Validate physical pose conventions against image observations and independent evaluation code.
 - Keep manuscript sources, PDFs, and build files out of this update.
